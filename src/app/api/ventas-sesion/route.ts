@@ -4,18 +4,15 @@ import { createClient } from '@/lib/supabase/server'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = await createClient()
 
-  const ahora = new Date()
-  const inicioDia = new Date(Date.UTC(
-    ahora.getUTCFullYear(), ahora.getUTCMonth(), ahora.getUTCDate(),
-    0, 0, 0, 0
-  )).toISOString()
-  const finDia = new Date(Date.UTC(
-    ahora.getUTCFullYear(), ahora.getUTCMonth(), ahora.getUTCDate(),
-    23, 59, 59, 999
-  )).toISOString()
+  const { searchParams } = new URL(request.url)
+  const cajaId = searchParams.get('cajaId')
+
+  if (!cajaId) {
+    return NextResponse.json({ success: false, data: [], error: 'cajaId es requerido' }, { status: 400 })
+  }
 
   const { data, error } = await supabase
     .from('facturas')
@@ -28,8 +25,7 @@ export async function GET() {
         producto:producto_id ( nombre, codigo )
       )
     `)
-    .gte('created_at', inicioDia)
-    .lte('created_at', finDia)
+    .eq('caja_sesion_id', cajaId)
     .order('created_at', { ascending: false })
 
   if (error) {

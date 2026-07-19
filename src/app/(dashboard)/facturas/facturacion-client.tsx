@@ -3,12 +3,12 @@
 'use client'
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
-import { Search, Plus, Minus, Trash2, ShoppingCart, Wallet, ReceiptText, CheckCircle2, BarChart2, FileDown, RefreshCw, ChevronDown, X, Building2 } from 'lucide-react'
+import { Search, Plus, Minus, Trash2, ShoppingCart, Wallet, ReceiptText, CheckCircle2, BarChart2, FileDown, RefreshCw, ChevronDown, X, Building2, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import { crearFactura, FacturaData, FacturaItem, marcarComoPagada } from '@/app/actions/facturas'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { abrirCaja } from '@/app/actions/caja'
+import { abrirCaja, cerrarCaja } from '@/app/actions/caja'
 
 export function FacturacionClient({ 
   inventarioInitial, 
@@ -54,6 +54,10 @@ export function FacturacionClient({
   const [subTabVentas, setSubTabVentas] = useState<'historial' | 'cartera'>('historial')
   const [expandedFacturaId, setExpandedFacturaId] = useState<string | null>(null)
   const [nextFacturaNum, setNextFacturaNum] = useState<number | null>(null)
+
+  const [showCloseCajaModal, setShowCloseCajaModal] = useState(false)
+  const [isClosingCaja, setIsClosingCaja] = useState(false)
+  const [efectivoCierreManual, setEfectivoCierreManual] = useState('')
 
   // Obtener numero de factura consecutivo exacto desde la DB
   useEffect(() => {
@@ -144,8 +148,9 @@ export function FacturacionClient({
   const fetchVentas = useCallback(async () => {
     setLoadingVentas(true)
     try {
+      if (!cajaAbierta?.id) return
       // Llamada directa a la API Route con cache desactivado para garantizar datos frescos
-      const res = await fetch('/api/ventas-hoy', { cache: 'no-store' })
+      const res = await fetch(`/api/ventas-sesion?cajaId=${cajaAbierta.id}`, { cache: 'no-store' })
       const json = await res.json()
       if (json.success) {
         setVentasHoy(json.data)
@@ -355,6 +360,21 @@ export function FacturacionClient({
     setIsOpeningCaja(false)
   }
 
+  const handleCerrarCaja = async () => {
+    if (!cajaAbierta) return
+    const efectivoFinal = Number(efectivoCierreManual.replace(/\D/g, '')) || 0
+    setIsClosingCaja(true)
+    const res = await cerrarCaja(cajaAbierta.id, efectivoFinal)
+    if (res.success) {
+      toast.success('Caja cerrada exitosamente')
+      setShowCloseCajaModal(false)
+      router.refresh()
+    } else {
+      toast.error(res.error || 'Error al cerrar caja')
+    }
+    setIsClosingCaja(false)
+  }
+
   if (!cajaAbierta) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center h-[calc(100vh-8rem)] bg-white rounded-[3rem] border border-slate-100 shadow-2xl p-10 text-center animate-in fade-in duration-1000">
@@ -412,7 +432,7 @@ export function FacturacionClient({
           </button>
         </div>
 
-        {activeTab === 'ventas' && (
+        {activeTab === 'ventas' ? (
           <div className="ml-auto flex gap-2">
             <button onClick={fetchVentas} disabled={loadingVentas} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-100 shadow-sm text-sm font-black text-slate-600 hover:bg-slate-50 transition-all disabled:opacity-50">
               <RefreshCw className={`w-4 h-4 ${loadingVentas ? 'animate-spin' : ''}`} />
@@ -421,6 +441,17 @@ export function FacturacionClient({
             <button onClick={exportarCSV} disabled={ventasHoy.length === 0} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-black transition-all active:scale-95 disabled:opacity-50">
               <FileDown className="w-4 h-4" />
               Exportar CSV
+            </button>
+            <button onClick={() => setShowCloseCajaModal(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 text-sm font-black transition-all active:scale-95 ml-2">
+              <Lock className="w-4 h-4" />
+              Cerrar Caja
+            </button>
+          </div>
+        ) : (
+          <div className="ml-auto flex gap-2">
+            <button onClick={() => setShowCloseCajaModal(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 text-sm font-black transition-all active:scale-95">
+              <Lock className="w-4 h-4" />
+              Cerrar Caja
             </button>
           </div>
         )}
@@ -1059,6 +1090,64 @@ export function FacturacionClient({
                 className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-4 rounded-xl font-black text-lg transition-all active:scale-95"
               >
                 NO, NUEVA VENTA
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Cierre de Caja */}
+      {showCloseCajaModal && cajaAbierta && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl flex flex-col items-center animate-in zoom-in-95 duration-300">
+            <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mb-6">
+              <Lock className="w-10 h-10" />
+            </div>
+            <h3 className="text-2xl font-black text-slate-900 mb-2">Cerrar Turno</h3>
+            <p className="text-slate-500 font-bold mb-6 text-center text-sm">
+              Ingresa el efectivo exacto que hay en la gaveta. El sistema calculará automáticamente si hay algún descuadre.
+            </p>
+
+            <div className="w-full bg-slate-50 rounded-2xl p-5 mb-6 border border-slate-100 space-y-3">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500 font-bold">Fondo Base (Apertura)</span>
+                <span className="font-black text-slate-900">${Number(cajaAbierta.monto_apertura).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500 font-bold">Ventas en Efectivo</span>
+                <span className="font-black text-emerald-600">+ ${kpisVentas.efectivo.toLocaleString()}</span>
+              </div>
+              <div className="pt-3 border-t border-slate-200 flex justify-between items-center">
+                <span className="text-slate-900 font-black uppercase text-xs">Total Esperado</span>
+                <span className="font-black text-xl text-indigo-600">${(Number(cajaAbierta.monto_apertura) + kpisVentas.efectivo).toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className="w-full relative mb-6">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Efectivo Físico en Gaveta</label>
+              <span className="absolute left-4 top-[38px] text-slate-400 font-black text-lg">$</span>
+              <input 
+                type="text" 
+                value={efectivoCierreManual ? Number(efectivoCierreManual.replace(/\D/g, '')).toLocaleString() : ''} 
+                onChange={e => setEfectivoCierreManual(e.target.value.replace(/\D/g, ''))}
+                className="w-full pl-10 pr-6 py-4 bg-white border-2 border-slate-200 focus:border-rose-500 rounded-2xl font-black text-2xl text-slate-900 text-right outline-none transition-all shadow-inner"
+                placeholder="0"
+              />
+            </div>
+
+            <div className="flex gap-3 w-full">
+              <button 
+                onClick={() => setShowCloseCajaModal(false)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-4 rounded-xl font-black transition-all active:scale-95"
+              >
+                CANCELAR
+              </button>
+              <button 
+                onClick={handleCerrarCaja}
+                disabled={isClosingCaja || !efectivoCierreManual}
+                className="flex-1 bg-rose-600 hover:bg-rose-500 text-white py-4 rounded-xl font-black shadow-lg shadow-rose-600/20 transition-all active:scale-95 disabled:opacity-50"
+              >
+                {isClosingCaja ? 'CERRANDO...' : 'CONFIRMAR CIERRE'}
               </button>
             </div>
           </div>
