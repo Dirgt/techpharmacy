@@ -94,6 +94,7 @@ export async function upsertInventario(data: {
   producto_id: string,
   codigo: string,
   nombre: string,
+  principio_activo?: string,
   laboratorio_id: string,
   fecha_vencimiento: string,
   cajas: number,
@@ -108,7 +109,8 @@ export async function upsertInventario(data: {
   lote?: string,
   registro_invima?: string,
   seccion?: string,
-  ubicacion?: string
+  ubicacion?: string,
+  stock_minimo: number
 }) {
   const supabase = await createClient()
 
@@ -138,6 +140,7 @@ export async function upsertInventario(data: {
 
     if (existingProd) {
       finalProductoId = existingProd.id
+      await supabase.from('productos').update({ principio_activo: data.principio_activo || null, nombre: data.nombre }).eq('id', finalProductoId)
     } else {
       // Crear producto nuevo automáticamente
       const { data: newProd, error: prodError } = await supabase
@@ -145,6 +148,7 @@ export async function upsertInventario(data: {
         .insert({
           codigo: data.codigo,
           nombre: data.nombre,
+          principio_activo: data.principio_activo || null,
           laboratorio_id: data.laboratorio_id || null,
         })
         .select()
@@ -155,6 +159,12 @@ export async function upsertInventario(data: {
       }
       finalProductoId = newProd.id
     }
+  } else {
+    // Si ya existe el producto, actualizamos su principio activo y nombre
+    await supabase.from('productos').update({ 
+       principio_activo: data.principio_activo || null,
+       nombre: data.nombre
+    }).eq('id', finalProductoId)
   }
 
   // 3. Ejecutar Upsert en la tabla inventario con conflict explícito
@@ -165,6 +175,7 @@ export async function upsertInventario(data: {
     cajas: Number(data.cajas) || 0,
     blisters: Number(data.blisters) || 0,
     unidades: Number(data.unidades) || 0,
+    stock_minimo: Number(data.stock_minimo) || 2,
     precio_caja: Number(data.precio_caja) || 0,
     precio_blister: Number(data.precio_blister) || 0,
     precio_unidad: Number(data.precio_unidad) || 0,

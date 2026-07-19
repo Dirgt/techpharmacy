@@ -42,6 +42,10 @@ export function FacturacionClient({
   const [ordenCompra, setOrdenCompra] = useState('')
   const [descuentoPct, setDescuentoPct] = useState<number>(0)
   const [ivaPct, setIvaPct] = useState<number>(0)
+  const [efectivoRecibido, setEfectivoRecibido] = useState<string>('')
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false)
+  const [showPrintModal, setShowPrintModal] = useState(false)
+  const [createdFacturaId, setCreatedFacturaId] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isOpeningCaja, setIsOpeningCaja] = useState(false)
   const [montoApertura, setMontoApertura] = useState('0')
@@ -84,6 +88,7 @@ export function FacturacionClient({
       item.nombre_producto?.toLowerCase().includes(term) ||
       item.codigo_producto?.toLowerCase().includes(term) ||
       item.laboratorio_nombre?.toLowerCase().includes(term) ||
+      item.principio_activo?.toLowerCase().includes(term) ||
       item.seccion?.toLowerCase().includes(term)
     ).slice(0, 10) // Limit to 10 for performance
   }, [searchTerm, inventarioInitial])
@@ -104,6 +109,11 @@ export function FacturacionClient({
   , [cartBaseIva, ivaPct])
 
   const cartTotal = useMemo(() => cartBaseIva + cartIvaMonto, [cartBaseIva, cartIvaMonto])
+  
+  const vueltas = useMemo(() => {
+    const recibido = Number(efectivoRecibido.replace(/\D/g, '')) || 0;
+    return Math.max(0, recibido - cartTotal);
+  }, [efectivoRecibido, cartTotal])
 
   const kpisVentas = useMemo(() => {
     let total = 0, efectivo = 0, tarjeta = 0, transferencia = 0
@@ -320,7 +330,8 @@ export function FacturacionClient({
       fetchVentas()
       
       if (res.factura?.id) {
-        window.open(`/facturas/${res.factura.id}/print`, '_blank')
+        setCreatedFacturaId(res.factura.id)
+        setShowPrintModal(true)
       }
     } else {
       toast.error(res.error || 'Error al procesar la venta')
@@ -359,7 +370,10 @@ export function FacturacionClient({
             <input 
               type="number" 
               value={montoApertura}
-              onChange={e => setMontoApertura(e.target.value)}
+              onChange={e => {
+                const val = Number(e.target.value);
+                if (val >= 0) setMontoApertura(e.target.value);
+              }}
               className="w-full pl-10 pr-6 py-4 bg-slate-50 border-none rounded-2xl font-black text-xl text-slate-900 focus:ring-4 focus:ring-indigo-600/10 transition-all outline-none"
               placeholder="Base en caja"
             />
@@ -437,6 +451,7 @@ export function FacturacionClient({
                       className="w-full text-left px-5 py-3 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 flex items-center justify-between group">
                       <div>
                         <h4 className="font-black text-slate-900 text-sm group-hover:text-indigo-600 transition-colors">{item.nombre_producto}</h4>
+                        {item.principio_activo && <p className="text-[10px] text-indigo-500 font-bold mb-0.5 mt-0.5 bg-indigo-50 inline-block px-1.5 py-0.5 rounded">Molécula: {item.principio_activo}</p>}
                         <p className="text-xs font-bold text-slate-400">{item.laboratorio_nombre} • {item.codigo_producto}</p>
                       </div>
                       <div className="text-right shrink-0 ml-4">
@@ -460,110 +475,159 @@ export function FacturacionClient({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {cart.map(item => (
-                    <div key={item.producto_id} className="bg-slate-50 p-3 rounded-2xl flex items-center gap-3 group border border-transparent hover:border-slate-200 transition-all">
-                      <div className="flex-1 min-w-0">
+                  {cart.map(item => {
+                    const stockInfo = inventarioInitial.find(p => p.producto_id === item.producto_id);
+                    return (
+                    <div key={item.producto_id} className="bg-slate-50 p-3 rounded-2xl flex items-center justify-between gap-3 group border border-transparent hover:border-slate-200 transition-all">
+                      <div className="flex-1 min-w-0 flex flex-col gap-1">
                         <p className="font-black text-slate-900 text-sm truncate">{item.nombre}</p>
                         <div className="flex items-center gap-2">
                           <p className="text-indigo-600 font-black text-base">${item.precio_linea.toLocaleString()}</p>
                           {item.descuento_porcentaje > 0 && (
-                            <div className="flex items-center gap-1">
-                              <span className="text-[9px] text-slate-400 line-through font-bold">${item.precio_unitario_base.toLocaleString()}</span>
-                              <span className="bg-rose-100 text-rose-600 text-[8px] font-black px-1 rounded">-{item.descuento_porcentaje}%</span>
-                            </div>
+                            <span className="bg-rose-100 text-rose-600 text-[8px] font-black px-1 rounded">-{item.descuento_porcentaje}%</span>
+                          )}
+                          {stockInfo && (
+                            <span className="text-[9px] font-bold text-slate-500 bg-slate-200/50 px-1.5 py-0.5 rounded-md truncate">
+                              Stock: {stockInfo.cajas}C {stockInfo.blisters}B {stockInfo.unidades}U
+                            </span>
                           )}
                         </div>
                       </div>
                       
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex items-center gap-1 shrink-0">
                         {(['cantidad_cajas', 'cantidad_blisters', 'cantidad_unidades'] as const).map((field, idx) => {
-                          const labels = ['C', 'B', 'U']
+                          const labels = ['CAJA', 'BLÍSTER', 'UNIDAD']
                           const val = item[field]
                           return (
-                            <div key={field} className="flex items-center bg-white rounded-lg border border-slate-100 overflow-hidden">
-                              <span className="text-[9px] font-black text-slate-400 px-1.5 uppercase">{labels[idx]}</span>
-                              <button onClick={() => updateQuantity(item.producto_id, field, val - 1)} className="p-1 hover:bg-slate-100 transition-colors text-slate-600"><Minus className="w-3 h-3" /></button>
-                              <span className="w-5 text-center text-xs font-black text-slate-900">{val}</span>
-                              <button onClick={() => updateQuantity(item.producto_id, field, val + 1)} className="p-1 hover:bg-slate-100 transition-colors text-slate-600"><Plus className="w-3 h-3" /></button>
+                            <div key={field} className="flex flex-col items-center gap-0.5">
+                              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{labels[idx]}</span>
+                              <div className="flex items-center bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
+                                <button onClick={() => updateQuantity(item.producto_id, field, val - 1)} className="p-1.5 hover:bg-slate-100 transition-colors text-slate-700"><Minus className="w-3.5 h-3.5" /></button>
+                                <span className="w-6 text-center text-sm font-black text-slate-900">{val}</span>
+                                <button onClick={() => updateQuantity(item.producto_id, field, val + 1)} className="p-1.5 hover:bg-slate-100 transition-colors text-slate-700"><Plus className="w-3.5 h-3.5" /></button>
+                              </div>
                             </div>
                           )
                         })}
                       </div>
 
-                      <button onClick={() => removeFromCart(item.producto_id)} className="p-1.5 bg-rose-50 text-rose-500 hover:bg-rose-100 rounded-lg shrink-0 transition-colors">
-                        <Trash2 className="w-3.5 h-3.5" />
+                      <button onClick={() => removeFromCart(item.producto_id)} className="p-2 bg-rose-50 text-rose-500 hover:bg-rose-100 rounded-xl shrink-0 transition-colors ml-1">
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
-                  ))}
+                  )})}
                 </div>
               )}
             </div>
 
           </div>{/* ── END LEFT PANEL ── */}
 
-          {/* RIGHT: Checkout Panel (Legacy Efficiency + Premium UI) */}
+          {/* RIGHT: Checkout Panel (Simplified UI for older users) */}
           <div className="w-full lg:w-[380px] flex flex-col gap-3 shrink-0 min-h-0 overflow-y-auto">
             
-            {/* ── HEADER DE FACTURACION (Visual Legacy Match) ── */}
-            <div className="bg-slate-900 rounded-[2rem] p-5 text-white shadow-2xl flex flex-col gap-4 relative overflow-hidden shrink-0">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500 rounded-full blur-[80px] opacity-20 pointer-events-none" />
-              <div className="relative z-10 flex justify-between items-start">
-                <div>
-                  <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Total a Cobrar</p>
-                  <h3 className="text-4xl font-black tracking-tighter text-emerald-400 transition-all duration-300">
-                    ${cartTotal.toLocaleString()}
-                  </h3>
+            {/* ── HEADER DE FACTURACION ── */}
+            <div className="bg-white rounded-[2rem] p-5 border-2 border-indigo-100 shadow-sm flex flex-col gap-4 shrink-0">
+              <div className="text-center">
+                <p className="text-slate-500 text-xs font-black uppercase tracking-widest mb-1">Total a Cobrar</p>
+                <h3 className="text-5xl font-black tracking-tighter text-indigo-600 transition-all duration-300">
+                  ${cartTotal.toLocaleString()}
+                </h3>
+              </div>
+
+              {/* Selector de Método de Pago Grande */}
+              <div className="mt-2">
+                <p className="text-slate-500 text-[10px] font-black uppercase tracking-tight mb-2 text-center">Método de Pago</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['efectivo', 'tarjeta', 'transferencia'] as const).map(metodo => (
+                    <button 
+                      key={metodo}
+                      onClick={() => setMetodoPago(metodo)}
+                      className={`py-3 rounded-xl font-black text-xs transition-all border-2 ${metodoPago === metodo ? 'border-indigo-600 bg-indigo-50 text-indigo-700 shadow-sm' : 'border-slate-100 bg-white text-slate-500 hover:border-slate-300'}`}
+                    >
+                      {metodo.toUpperCase()}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Quick Entry Grid */}
-              <div className="relative z-10 grid grid-cols-2 gap-3">
-                <div className="bg-white/5 rounded-2xl p-3 border border-white/10 relative">
-                  <p className="text-slate-500 text-[9px] font-black uppercase tracking-tight mb-1">Vendedor</p>
-                  <select value={vendedorId} onChange={e => setVendedorId(e.target.value)}
-                    className="bg-transparent text-white font-black text-xs outline-none w-full appearance-none pr-6 cursor-pointer relative z-10">
-                    <option value="" className="text-slate-900">-- Seleccionar --</option>
-                    {vendedores.map(v => <option key={v.id} value={v.id} className="text-slate-900">{v.full_name}</option>)}
-                  </select>
-                  <div className="absolute right-3 top-[60%] -translate-y-1/2 pointer-events-none text-white/50 z-0">
-                    ▼
+              {/* Calculadora de Vueltas (Sólo Efectivo) */}
+              {metodoPago === 'efectivo' && (
+                <div className="bg-slate-50 rounded-2xl p-4 mt-2 border border-slate-100">
+                  <p className="text-slate-600 text-xs font-black uppercase tracking-tight mb-2 text-center">Efectivo Recibido</p>
+                  
+                  {/* Botones de dinero rápido */}
+                  <div className="flex gap-2 mb-3 overflow-x-auto pb-1 custom-scrollbar">
+                    <button onClick={() => setEfectivoRecibido(cartTotal.toString())} className="px-3 py-2 shrink-0 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 transition-colors">Exacto</button>
+                    <button onClick={() => setEfectivoRecibido('20000')} className="px-3 py-2 shrink-0 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-700 hover:bg-emerald-50 hover:text-emerald-600 transition-colors">$20k</button>
+                    <button onClick={() => setEfectivoRecibido('50000')} className="px-3 py-2 shrink-0 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-700 hover:bg-emerald-50 hover:text-emerald-600 transition-colors">$50k</button>
+                    <button onClick={() => setEfectivoRecibido('100000')} className="px-3 py-2 shrink-0 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-700 hover:bg-emerald-50 hover:text-emerald-600 transition-colors">$100k</button>
+                  </div>
+
+                  {/* Input de Efectivo manual */}
+                  <div className="relative mb-4">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-black text-lg">$</span>
+                    <input 
+                      type="text" 
+                      value={efectivoRecibido ? Number(efectivoRecibido.replace(/\D/g, '') || 0).toLocaleString() : ''} 
+                      onChange={e => setEfectivoRecibido(e.target.value.replace(/\D/g, ''))}
+                      className="w-full pl-8 pr-4 py-3 bg-white border-2 border-slate-200 focus:border-indigo-500 rounded-xl font-black text-xl text-slate-900 text-right outline-none transition-all shadow-inner"
+                      placeholder="0"
+                    />
+                  </div>
+
+                  {/* Vueltas result */}
+                  <div className={`p-3 rounded-xl flex items-center justify-between border-2 ${vueltas > 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
+                    <span className="text-xs font-black uppercase tracking-widest">Cambio / Vueltas</span>
+                    <span className="text-2xl font-black">${vueltas.toLocaleString()}</span>
                   </div>
                 </div>
-                <div className="bg-white/5 rounded-2xl p-3 border border-white/10 relative">
-                  <p className="text-slate-500 text-[9px] font-black uppercase tracking-tight mb-1">Condición</p>
-                  <select value={tipoVenta} onChange={e => setTipoVenta(e.target.value as any)}
-                    className="bg-transparent text-white font-black text-xs outline-none w-full appearance-none pr-6 cursor-pointer relative z-10">
-                    <option value="contado" className="text-slate-900">CONTADO</option>
-                    <option value="credito" className="text-slate-900">CRÉDITO</option>
-                  </select>
-                  <div className="absolute right-3 top-[60%] -translate-y-1/2 pointer-events-none text-white/50 z-0">▼</div>
-                </div>
-                <div className="bg-slate-800/50 rounded-2xl p-3 border border-white/5 flex flex-col justify-center">
-                  <p className="text-slate-500 text-[9px] font-black uppercase tracking-tight mb-1">Factura #</p>
-                  <p className="text-emerald-400 font-black text-sm tracking-widest">
-                    {nextFacturaNum ? nextFacturaNum : 'PENDIENTE'}
-                  </p>
-                </div>
-                <div className="bg-white/5 rounded-2xl p-3 border border-white/10 relative">
-                  <p className="text-slate-500 text-[9px] font-black uppercase tracking-tight mb-1">Pago</p>
-                  <select value={metodoPago} onChange={e => setMetodoPago(e.target.value as any)}
-                    className="bg-transparent text-white font-black text-xs outline-none w-full appearance-none pr-6 cursor-pointer relative z-10">
-                    <option value="efectivo" className="text-slate-900">EFECTIVO</option>
-                    <option value="tarjeta" className="text-slate-900">TARJETA</option>
-                    <option value="transferencia" className="text-slate-900">TRANSF.</option>
-                  </select>
-                  <div className="absolute right-3 top-[60%] -translate-y-1/2 pointer-events-none text-white/50 z-0">▼</div>
-                </div>
-                <div className="bg-white/5 rounded-2xl p-3 border border-white/10">
-                  <p className="text-slate-500 text-[9px] font-black uppercase tracking-tight mb-1">Descuento (%)</p>
-                  <input type="number" min="0" max="100" value={descuentoPct} onChange={e => setDescuentoPct(Number(e.target.value) || 0)}
-                    className="bg-transparent text-emerald-400 font-black text-sm outline-none w-full" />
-                </div>
-                <div className="bg-white/5 rounded-2xl p-3 border border-white/10">
-                  <p className="text-slate-500 text-[9px] font-black uppercase tracking-tight mb-1">IVA (%)</p>
-                  <input type="number" min="0" max="100" value={ivaPct} onChange={e => setIvaPct(Number(e.target.value) || 0)}
-                    className="bg-transparent text-white font-black text-xs outline-none w-full" />
-                </div>
+              )}
+
+              {/* Botón de Opciones Avanzadas */}
+              <div className="mt-2">
+                <button 
+                  onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                  className="w-full flex items-center justify-center gap-2 py-2 text-slate-400 hover:text-indigo-600 transition-colors text-[10px] font-black uppercase tracking-widest"
+                >
+                  <ChevronDown className={`w-3 h-3 transition-transform ${showAdvancedOptions ? 'rotate-180' : ''}`} />
+                  {showAdvancedOptions ? 'Ocultar Opciones Avanzadas' : 'Opciones Avanzadas'}
+                  <ChevronDown className={`w-3 h-3 transition-transform ${showAdvancedOptions ? 'rotate-180' : ''}`} />
+                </button>
+                
+                {showAdvancedOptions && (
+                  <div className="grid grid-cols-2 gap-3 mt-3 p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="bg-white rounded-xl p-2 border border-slate-100 relative">
+                      <p className="text-slate-400 text-[8px] font-black uppercase tracking-tight mb-1">Vendedor</p>
+                      <select value={vendedorId} onChange={e => setVendedorId(e.target.value)}
+                        className="bg-transparent text-slate-700 font-black text-xs outline-none w-full appearance-none pr-6 cursor-pointer relative z-10">
+                        <option value="">-- Seleccionar --</option>
+                        {vendedores.map(v => <option key={v.id} value={v.id}>{v.full_name}</option>)}
+                      </select>
+                    </div>
+                    <div className="bg-white rounded-xl p-2 border border-slate-100 relative">
+                      <p className="text-slate-400 text-[8px] font-black uppercase tracking-tight mb-1">Condición</p>
+                      <select value={tipoVenta} onChange={e => setTipoVenta(e.target.value as any)}
+                        className="bg-transparent text-slate-700 font-black text-xs outline-none w-full appearance-none pr-6 cursor-pointer relative z-10">
+                        <option value="contado">CONTADO</option>
+                        <option value="credito">CRÉDITO</option>
+                      </select>
+                    </div>
+                    <div className="bg-white rounded-xl p-2 border border-slate-100">
+                      <p className="text-slate-400 text-[8px] font-black uppercase tracking-tight mb-1">Descuento (%)</p>
+                      <input type="number" min="0" max="100" value={descuentoPct} onChange={e => setDescuentoPct(Math.max(0, Number(e.target.value) || 0))}
+                        className="bg-transparent text-indigo-600 font-black text-sm outline-none w-full" />
+                    </div>
+                    <div className="bg-white rounded-xl p-2 border border-slate-100">
+                      <p className="text-slate-400 text-[8px] font-black uppercase tracking-tight mb-1">IVA (%)</p>
+                      <input type="number" min="0" max="100" value={ivaPct} onChange={e => setIvaPct(Math.max(0, Number(e.target.value) || 0))}
+                        className="bg-transparent text-slate-700 font-black text-xs outline-none w-full" />
+                    </div>
+                    <div className="col-span-2 bg-slate-100 rounded-xl p-2 border border-slate-200 flex justify-between items-center">
+                      <p className="text-slate-400 text-[8px] font-black uppercase tracking-tight">Factura # (Automática)</p>
+                      <p className="text-slate-600 font-black text-xs tracking-widest">{nextFacturaNum ? nextFacturaNum : 'PENDIENTE'}</p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -709,18 +773,18 @@ export function FacturacionClient({
               
               <div className="h-px bg-slate-100 my-1" />
               
-              <div className="flex justify-between items-end">
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Neto</span>
-                  <span className="text-3xl font-black text-indigo-600 tracking-tighter leading-none">${cartTotal.toLocaleString()}</span>
+              <div className="flex flex-col gap-3">
+                <div className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                  <span className="text-sm font-black text-slate-500 uppercase tracking-widest">Total Neto a Pagar</span>
+                  <span className="text-4xl font-black text-indigo-600 tracking-tighter leading-none">${cartTotal.toLocaleString()}</span>
                 </div>
                 <button 
                   onClick={handleProcessSale}
                   disabled={isProcessing || cart.length === 0}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-4 rounded-3xl font-black text-lg shadow-xl shadow-indigo-600/20 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-5 rounded-2xl font-black text-2xl shadow-xl shadow-indigo-600/20 transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-3"
                 >
-                  {isProcessing ? <RefreshCw className="w-6 h-6 animate-spin" /> : <CheckCircle2 className="w-6 h-6" />}
-                  FACTURAR
+                  {isProcessing ? <RefreshCw className="w-8 h-8 animate-spin" /> : <CheckCircle2 className="w-8 h-8" />}
+                  FACTURAR E IMPRIMIR
                 </button>
               </div>
             </div>
@@ -964,6 +1028,40 @@ export function FacturacionClient({
               </div>
             </div>
           )}
+        </div>
+      )}
+      {/* Modal de Impresión */}
+      {showPrintModal && createdFacturaId && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl flex flex-col items-center text-center animate-in zoom-in-95 duration-300">
+            <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-6">
+              <CheckCircle2 className="w-10 h-10" />
+            </div>
+            <h3 className="text-2xl font-black text-slate-900 mb-2">Venta Exitosa</h3>
+            <p className="text-slate-500 font-bold mb-8">¿Deseas imprimir el recibo para el cliente?</p>
+            
+            <div className="flex flex-col gap-3 w-full">
+              <button 
+                onClick={() => {
+                  window.open(`/facturas/${createdFacturaId}/print`, '_blank')
+                  setShowPrintModal(false)
+                  setCreatedFacturaId(null)
+                }}
+                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-xl font-black text-lg shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
+              >
+                SÍ, IMPRIMIR RECIBO
+              </button>
+              <button 
+                onClick={() => {
+                  setShowPrintModal(false)
+                  setCreatedFacturaId(null)
+                }}
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-4 rounded-xl font-black text-lg transition-all active:scale-95"
+              >
+                NO, NUEVA VENTA
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -36,9 +36,11 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 8
 
+  const [esProductoUnico, setEsProductoUnico] = useState(false)
+
   // Estado del Formulario Robusto
   const [formData, setFormData] = useState({
-    id: '', producto_id: '', codigo: '', nombre: '', laboratorio_id: '',
+    id: '', producto_id: '', codigo: '', nombre: '', principio_activo: '', laboratorio_id: '',
     fecha_vencimiento: '', 
     cajas: 0, blisters: 0, unidades: 0,
     blisters_por_caja: 1, 
@@ -52,7 +54,8 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
     lote: '',
     registro_invima: '',
     seccion: '',
-    ubicacion: ''
+    ubicacion: '',
+    stock_minimo: 2
   })
 
   // --- SECCIONES DE FARMACIA ---
@@ -95,7 +98,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
 
     return {
       totalItems: data.length,
-      lowStock: data.filter(item => (parseInt(item.cajas as any) || 0) <= 2).length,
+      lowStock: data.filter(item => (parseInt(item.cajas as any) || 0) <= (parseInt(item.stock_minimo as any) || 2)).length,
       expiringSoon: data.filter(item => item.fecha_vencimiento && isBefore(parseISO(item.fecha_vencimiento), next3Months)).length,
       inventoryValue: data.reduce((acc, item) => acc + ((parseInt(item.cajas as any) || 0) * (parseFloat(item.precio_caja as any) || 0)), 0),
       starProduct: performance[0]?.name || 'N/A',
@@ -116,7 +119,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       item.laboratorio?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.seccion?.toLowerCase().includes(searchTerm.toLowerCase())
     )
-    if (filterType === 'stock_bajo') result = result.filter(item => item.cajas <= 2)
+    if (filterType === 'stock_bajo') result = result.filter(item => item.cajas <= (item.stock_minimo || 2))
     if (filterType === 'vencimiento') result = result.filter(item => item.fecha_vencimiento && isBefore(parseISO(item.fecha_vencimiento), addDays(new Date(), 90)))
     if (filterType === 'dead_stock') {
         const tenDaysAgo = addDays(new Date(), -10)
@@ -188,6 +191,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       producto_id: item.producto_id,
       codigo: item.codigo,
       nombre: item.nombre_producto,
+      principio_activo: item.principio_activo || '',
       laboratorio_id: item.laboratorio_id || '',
       fecha_vencimiento: item.fecha_vencimiento || '',
       cajas: item.cajas || 0,
@@ -202,8 +206,10 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       lote: item.lote || '',
       registro_invima: item.registro_invima || '',
       seccion: item.seccion || '',
-      ubicacion: item.ubicacion || ''
+      ubicacion: item.ubicacion || '',
+      stock_minimo: item.stock_minimo || 2
     })
+    setEsProductoUnico(false)
     toast.success('Producto cargado con éxito')
   }
 
@@ -270,12 +276,13 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
     <div className="animate-in fade-in duration-1000 space-y-10 pb-20">
       {/* SEMÁFORO DE SALUD Y BI (Cards) */}
       {/* SEMÁFORO DE SALUD Y BI (Cards) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4 lg:gap-6">
         {[
           { label: 'VALOR DEL STOCK', val: `$${stats.inventoryValue.toLocaleString()}`, icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-50', filter: 'todos', sub: 'Capital Activo' },
           { label: 'MARGEN ESPERADO', val: `$${stats.estimatedProfit.toLocaleString()}`, icon: Gem, color: 'text-emerald-600', bg: 'bg-emerald-50', filter: 'todos', sub: 'Ganancia Proyectada' },
-          { label: 'CRÍTICOS / VENCIMIENTO', val: stats.expiringSoon, icon: AlertCircle, color: 'text-rose-600', bg: 'bg-rose-50', filter: 'vencimiento', sub: 'Revisión Inmediata' },
-          { label: 'STOCK SIN MOVIMIENTO', val: stats.deadStock, icon: Activity, color: 'text-amber-600', bg: 'bg-amber-50', filter: 'dead_stock', sub: '10 Días Inactivo' },
+          { label: 'STOCK BAJO', val: stats.lowStock, icon: AlertCircle, color: 'text-rose-600', bg: 'bg-rose-50', filter: 'stock_bajo', sub: 'Requiere Pedido' },
+          { label: 'VENCIMIENTO', val: stats.expiringSoon, icon: AlertCircle, color: 'text-amber-600', bg: 'bg-amber-50', filter: 'vencimiento', sub: 'Revisión Inmediata' },
+          { label: 'STOCK MUERTO', val: stats.deadStock, icon: Activity, color: 'text-slate-600', bg: 'bg-slate-50', filter: 'dead_stock', sub: '10 Días Inactivo' },
         ].map((item, i) => (
           <button 
             key={i} 
@@ -321,13 +328,14 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
 
             onClick={() => {
               setFormData({ 
-                id: '', producto_id: '', codigo: '', nombre: '', laboratorio_id: '',
+                id: '', producto_id: '', codigo: '', nombre: '', principio_activo: '', laboratorio_id: '',
                 fecha_vencimiento: '', cajas: 0, blisters: 0, unidades: 0,
                 blisters_por_caja: 1, unidades_por_blister: 1,
                 precio_caja: 0, precio_blister: 0, precio_unidad: 0, 
                 porcentaje_ganancia: 20, margen_blister: 20, margen_unidad: 30,
-                lote: '', registro_invima: '', seccion: '', ubicacion: ''
+                lote: '', registro_invima: '', seccion: '', ubicacion: '', stock_minimo: 2
               })
+              setEsProductoUnico(false)
               setIsModalOpen(true)
             }}
             className="w-full sm:w-auto justify-center bg-indigo-600 text-white px-8 lg:px-12 py-4 lg:py-6 rounded-[2rem] lg:rounded-[2.5rem] text-[11px] lg:text-sm font-black flex items-center gap-2 lg:gap-4 hover:bg-indigo-700 hover:shadow-2xl hover:shadow-indigo-200 transition-all active:scale-95 whitespace-nowrap"
@@ -431,32 +439,35 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       </div>
 
       {/* TERMINAL DE ABASTECIMIENTO ROBUSTA (Sidebar XXL) */}
+      {/* TERMINAL DE ABASTECIMIENTO ROBUSTA (Sidebar) */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-end bg-slate-900/80 backdrop-blur-md p-6 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-3xl h-[calc(100vh-3rem)] rounded-[5rem] shadow-2xl flex flex-col animate-in slide-in-from-right duration-500 overflow-hidden relative border border-white/20">
+        <div className="fixed inset-0 z-[100] flex items-center justify-end bg-slate-900/60 backdrop-blur-sm p-4 sm:p-6 animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-3xl h-[calc(100vh-2rem)] sm:h-[calc(100vh-3rem)] rounded-2xl shadow-2xl flex flex-col animate-in slide-in-from-right duration-500 overflow-hidden relative border border-slate-200">
             
-            <div className="p-8 pb-4 flex justify-between items-center bg-slate-50/50">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white">
               <div>
-                <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase leading-none">{formData.id ? 'Editar Producto' : 'Nuevo Ingreso'}</h2>
-                <p className="text-indigo-600 text-[10px] font-black uppercase tracking-[0.3em] mt-2 flex items-center gap-2"><Package className="w-3 h-3" /> Gestión de Existencias</p>
+                <h2 className="text-xl font-semibold text-slate-800 uppercase tracking-wide">{formData.id ? 'Editar Producto' : 'Nuevo Ingreso'}</h2>
+                <p className="text-indigo-600 text-xs font-medium uppercase tracking-wider mt-1 flex items-center gap-1"><Package className="w-4 h-4" /> Gestión de Existencias</p>
+                <p className="text-xs text-slate-500 font-semibold mt-2">* Campos obligatorios</p>
               </div>
-              <button onClick={() => setIsModalOpen(false)} className="w-14 h-14 bg-white hover:bg-rose-50 hover:text-rose-600 flex items-center justify-center rounded-2xl transition-all shadow-lg active:scale-90 border border-slate-100">
-                <Plus className="w-8 h-8 rotate-45" />
+              <button onClick={() => setIsModalOpen(false)} className="w-10 h-10 bg-slate-50 hover:bg-rose-50 hover:text-rose-600 flex items-center justify-center rounded-lg transition-colors shadow-sm border border-slate-200">
+                <Plus className="w-6 h-6 rotate-45" />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-10 space-y-8 custom-scrollbar">
-              <form id="matrix-form" onSubmit={handleSubmit} className="space-y-12">
+            <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6 custom-scrollbar">
+              <form id="matrix-form" onSubmit={handleSubmit} className="space-y-8">
                 
                 {/* Identificación */}
-                <div className="grid grid-cols-3 gap-6">
-                   <div className="col-span-1 space-y-4">
-                      <label className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] px-4">Código</label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                   <div className="col-span-1 space-y-2">
+                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Código <span className="text-rose-500">*</span></label>
                       <input 
                         type="text" 
                         placeholder="ID..." 
-                        className="w-full p-6 bg-slate-50 border-4 border-transparent rounded-[2.5rem] text-xl font-black focus:bg-white focus:border-indigo-600/10 outline-none transition-all shadow-inner" 
+                        className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" 
                         value={formData.codigo} 
+                        required
                         onChange={(e) => {
                           const val = e.target.value
                           handleInputChange('codigo', val)
@@ -474,131 +485,174 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                         }}
                       />
                    </div>
-                   <div className="col-span-2 space-y-4">
-                      <label className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] px-4">Nombre del Medicamento</label>
+                   <div className="col-span-1 md:col-span-2 space-y-2">
+                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Nombre del Medicamento <span className="text-rose-500">*</span></label>
                       <input 
                         type="text" 
                         placeholder="Escribir nombre..." 
-                        className="w-full p-6 bg-slate-50 border-4 border-transparent rounded-[2.5rem] text-xl font-black focus:bg-white focus:border-indigo-600/10 outline-none transition-all shadow-inner" 
+                        className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" 
                         value={formData.nombre} 
                         onChange={(e) => handleInputChange('nombre', e.target.value)} 
                         required 
                       />
                    </div>
+                    <div className="col-span-1 md:col-span-3 space-y-2 pt-2 border-t border-slate-100">
+                       <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Principio Activo (Molécula)</label>
+                       <input 
+                         type="text" 
+                         placeholder="Ej. Acetaminofén, Ibuprofeno..." 
+                         className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" 
+                         value={formData.principio_activo} 
+                         onChange={(e) => handleInputChange('principio_activo', e.target.value)} 
+                       />
+                       <p className="text-[10px] font-medium text-slate-500 italic mt-1">Corresponde a la molécula principal (ej. Acetaminofén) para diferenciar del nombre de marca (Dolex).</p>
+                    </div>
                 </div>
 
                 {/* Sección y Laboratorio */}
-                <div className="grid grid-cols-2 gap-8">
-                   <div className="space-y-4">
-                      <label className="text-xs font-black text-slate-400 uppercase px-4 flex justify-between items-center">
-                        Laboratorio
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                   <div className="space-y-2">
+                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex justify-between items-center">
+                        <span>Laboratorio <span className="text-rose-500">*</span></span>
                         {!isAddingLab && (
                           <button type="button" onClick={() => setIsAddingLab(true)} className="text-indigo-600 hover:underline">+ Nuevo</button>
                         )}
                       </label>
                       {isAddingLab ? (
                         <div className="flex gap-2">
-                          <input type="text" className="flex-1 p-4 bg-slate-50 rounded-2xl font-black outline-none border-2 border-indigo-200" value={newLabName} onChange={e => setNewLabName(e.target.value)} placeholder="Nombre..." />
-                          <button type="button" onClick={handleAddLab} className="p-4 bg-indigo-600 text-white rounded-2xl"><Check className="w-5 h-5"/></button>
-                          <button type="button" onClick={() => setIsAddingLab(false)} className="p-4 bg-slate-200 text-slate-600 rounded-2xl"><Plus className="w-5 h-5 rotate-45"/></button>
+                          <input type="text" className="flex-1 p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={newLabName} onChange={e => setNewLabName(e.target.value)} placeholder="Nombre..." />
+                          <button type="button" onClick={handleAddLab} className="p-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"><Check className="w-4 h-4"/></button>
+                          <button type="button" onClick={() => setIsAddingLab(false)} className="p-3 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors shadow-sm"><Plus className="w-4 h-4 rotate-45"/></button>
                         </div>
                       ) : (
-                        <select className="w-full p-6 bg-slate-50 rounded-[2rem] font-black outline-none border-4 border-transparent focus:border-indigo-100" value={formData.laboratorio_id} onChange={e => handleInputChange('laboratorio_id', e.target.value)}>
+                        <select required className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.laboratorio_id} onChange={e => handleInputChange('laboratorio_id', e.target.value)}>
                            <option value="">Seleccionar Laboratorio...</option>
                            {localLabs.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
                         </select>
                       )}
                    </div>
-                   <div className="space-y-4">
-                      <label className="text-xs font-black text-slate-400 uppercase px-4">Sección / Categoría</label>
-                      <select className="w-full p-6 bg-slate-50 rounded-[2rem] font-black outline-none border-4 border-transparent focus:border-indigo-100" value={formData.seccion} onChange={e => handleInputChange('seccion', e.target.value)}>
+                   <div className="space-y-2">
+                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Sección / Categoría <span className="text-rose-500">*</span></label>
+                      <select required className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.seccion} onChange={e => handleInputChange('seccion', e.target.value)}>
                          <option value="">Seleccionar Sección...</option>
                          {SECCIONES.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                    </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-8">
-                   <div className="space-y-4">
-                      <label className="text-xs font-black text-slate-400 uppercase px-4">Lote No.</label>
-                      <input type="text" className="w-full p-6 bg-slate-50 rounded-[2rem] font-black outline-none border-4 border-transparent focus:border-indigo-100" value={formData.lote} onChange={e => handleInputChange('lote', e.target.value)} placeholder="Ej: L9082..." />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                   <div className="space-y-2">
+                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Lote No.</label>
+                      <input type="text" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.lote} onChange={e => handleInputChange('lote', e.target.value)} placeholder="Ej: L9082..." />
                    </div>
-                   <div className="space-y-4">
-                      <label className="text-xs font-black text-slate-400 uppercase px-4">Reg. INVIMA</label>
-                      <input type="text" className="w-full p-6 bg-slate-50 rounded-[2rem] font-black outline-none border-4 border-transparent focus:border-indigo-100" value={formData.registro_invima} onChange={e => handleInputChange('registro_invima', e.target.value)} placeholder="Ej: 2023M..." />
+                   <div className="space-y-2">
+                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Reg. INVIMA</label>
+                      <input type="text" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.registro_invima} onChange={e => handleInputChange('registro_invima', e.target.value)} placeholder="Ej: 2023M..." />
                    </div>
-                   <div className="space-y-4">
-                      <label className="text-xs font-black text-slate-400 uppercase px-4">Vencimiento</label>
-                      <input type="date" required className="w-full p-6 bg-slate-50 rounded-[2rem] font-black outline-none border-4 border-transparent focus:border-indigo-100" value={formData.fecha_vencimiento} onChange={e => handleInputChange('fecha_vencimiento', e.target.value)} />
+                   <div className="space-y-2">
+                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Vencimiento <span className="text-rose-500">*</span></label>
+                      <input type="date" required className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.fecha_vencimiento} onChange={e => handleInputChange('fecha_vencimiento', e.target.value)} />
                    </div>
                 </div>
 
-                <div className="space-y-4">
-                  <label className="text-xs font-black text-slate-400 uppercase px-4">Ubicación Detallada (Módulo/Estante)</label>
-                  <input type="text" className="w-full p-6 bg-slate-50 rounded-[2rem] font-black outline-none border-4 border-transparent focus:border-indigo-100" value={formData.ubicacion} onChange={e => handleInputChange('ubicacion', e.target.value)} placeholder="Ej: Módulo A - Fila 2" />
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Ubicación Detallada (Módulo/Estante)</label>
+                  <input type="text" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.ubicacion} onChange={e => handleInputChange('ubicacion', e.target.value)} placeholder="Ej: Módulo A - Fila 2" />
+                </div>
+
+                <div className="flex items-center gap-3 bg-indigo-50 p-4 rounded-xl border border-indigo-100">
+                  <input type="checkbox" id="esProductoUnico" className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 border-indigo-300 cursor-pointer" checked={esProductoUnico} onChange={(e) => {
+                    setEsProductoUnico(e.target.checked);
+                    if (e.target.checked) {
+                      setFormData(prev => ({...prev, blisters_por_caja: 1, unidades_por_blister: 1, blisters: 0, unidades: 0}));
+                    }
+                  }} />
+                  <label htmlFor="esProductoUnico" className="text-sm font-semibold text-indigo-900 cursor-pointer">
+                    Es un producto único / No trae blísters (Ej. Jarabe, Shampoo)
+                  </label>
                 </div>
 
                 {/* Matriz de Conversión */}
-                <div className="bg-indigo-50/50 p-8 rounded-[3rem] border border-indigo-100 space-y-6">
-                   <div className="flex items-center gap-4 text-indigo-600 font-black uppercase text-[10px] tracking-widest"><Calculator className="w-4 h-4" /> Matriz de Empaque</div>
-                   <div className="grid grid-cols-2 gap-8">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-500 uppercase text-center block">Blísters por Caja</label>
-                        <input type="number" min="1" className="w-full p-5 bg-white rounded-2xl text-center text-xl font-black outline-none border border-indigo-100 shadow-sm" value={formData.blisters_por_caja} onChange={e => setFormData({...formData, blisters_por_caja: parseInt(e.target.value) || 1})} />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-500 uppercase text-center block">Unidades por Blíster</label>
-                        <input type="number" min="1" className="w-full p-5 bg-white rounded-2xl text-center text-xl font-black outline-none border border-indigo-100 shadow-sm" value={formData.unidades_por_blister} onChange={e => setFormData({...formData, unidades_por_blister: parseInt(e.target.value) || 1})} />
-                      </div>
-                   </div>
-                </div>
+                {!esProductoUnico && (
+                  <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 space-y-4">
+                     <div className="flex items-center gap-2 text-slate-700 font-semibold uppercase text-xs tracking-wide"><Calculator className="w-4 h-4" /> Matriz de Empaque</div>
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <label className="text-xs font-semibold text-slate-600 uppercase block">Blísters por Caja</label>
+                          <input type="number" min="1" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.blisters_por_caja} onChange={e => setFormData({...formData, blisters_por_caja: parseInt(e.target.value) || 1})} />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-semibold text-slate-600 uppercase block">Unidades por Blíster</label>
+                          <input type="number" min="1" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.unidades_por_blister} onChange={e => setFormData({...formData, unidades_por_blister: parseInt(e.target.value) || 1})} />
+                        </div>
+                     </div>
+                  </div>
+                )}
 
                 {/* Existencias */}
-                <div className="bg-slate-50 p-8 rounded-[3rem] border border-slate-100 space-y-6 shadow-inner">
-                   <p className="text-xs font-black text-indigo-600 uppercase tracking-widest flex items-center gap-3"><Package className="w-4 h-4"/> Conteo Físico</p>
-                   <div className="grid grid-cols-3 gap-6">
-                      {[ {l:'Cajas',k:'cajas'}, {l:'Blísters',k:'blisters'}, {l:'Unidades',k:'unidades'} ].map((x, i) => (
-                        <div key={i} className="text-center">
-                           <label className="text-[10px] font-black text-slate-400 uppercase mb-3 block">{x.l}</label>
-                           <input type="number" className="w-full bg-white border-2 border-slate-100 rounded-[2rem] p-6 text-center text-3xl font-black outline-none shadow-xl focus:ring-indigo-600/5 transition-all" value={(formData as any)[x.k]} onChange={e => setFormData({...formData, [x.k]: parseInt(e.target.value) || 0})} />
+                <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 space-y-4">
+                   <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide flex items-center gap-2"><Package className="w-4 h-4"/> Conteo Físico</p>
+                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {[ {l: esProductoUnico ? 'Cantidad Total' : 'Cajas', k:'cajas'}, 
+                         ...(!esProductoUnico ? [{l:'Blísters',k:'blisters'}, {l:'Unidades',k:'unidades'}] : []) 
+                      ].map((x, i) => (
+                        <div key={i} className="space-y-2">
+                           <label className="text-xs font-semibold text-slate-600 uppercase block">{x.l}</label>
+                           <input type="number" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={(formData as any)[x.k]} onChange={e => setFormData({...formData, [x.k]: parseInt(e.target.value) || 0})} />
                         </div>
                       ))}
+                   </div>
+
+                   <div className="pt-4 mt-4 border-t border-slate-200">
+                     <div className="md:w-1/3 space-y-2">
+                       <label className="text-xs font-bold text-amber-600 uppercase flex items-center gap-2">
+                         <AlertCircle className="w-4 h-4"/> Stock Mínimo (Alerta)
+                       </label>
+                       <input type="number" min="0" className="w-full p-3 bg-amber-50/30 border border-amber-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-amber-600/20 focus:border-amber-600 outline-none transition-all shadow-sm" value={formData.stock_minimo} onChange={e => setFormData({...formData, stock_minimo: parseInt(e.target.value) || 0})} />
+                       <p className="text-[10px] text-slate-500 font-medium leading-tight">El sistema generará una alerta en rojo cuando el inventario caiga a este número de cajas/unidades.</p>
+                     </div>
                    </div>
                 </div>
 
                 {/* Precios */}
-                <div className="bg-emerald-50/50 p-8 rounded-[3rem] border border-emerald-100 space-y-8 shadow-xl">
-                   <label className="text-xs font-black text-emerald-600 uppercase block text-center tracking-widest">Costo Adquisición (Caja)</label>
-                   <input type="number" step="0.01" className="w-full bg-white border-4 border-emerald-100 rounded-[2rem] p-5 text-center text-4xl font-black text-emerald-700 outline-none shadow-xl focus:ring-emerald-600/5 transition-all" value={formData.precio_caja} onChange={e => setFormData({...formData, precio_caja: parseFloat(e.target.value) || 0})} />
+                <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 space-y-6">
+                   <div className="space-y-2">
+                     <label className="text-xs font-semibold text-slate-600 uppercase block">Costo Adquisición (Caja) <span className="text-rose-500">*</span></label>
+                     <input required type="number" step="0.01" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.precio_caja} onChange={e => setFormData({...formData, precio_caja: parseFloat(e.target.value) || 0})} />
+                   </div>
 
-                   <div className="grid grid-cols-3 gap-6">
+                   <div className={`grid grid-cols-1 md:grid-cols-${esProductoUnico ? '1' : '3'} gap-6`}>
                       {[ 
-                        {l:'PVP Caja', v:formData.precio_caja, m:formData.porcentaje_ganancia}, 
-                        {l:'PVP Blíster', v:formData.precio_blister, m:formData.margen_blister}, 
-                        {l:'PVP Unidad', v:formData.precio_unidad, m:formData.margen_unidad} 
+                        {l: esProductoUnico ? 'PVP Final' : 'PVP Caja', v:formData.precio_caja, m:formData.porcentaje_ganancia}, 
+                        ...(!esProductoUnico ? [
+                          {l:'PVP Blíster', v:formData.precio_blister, m:formData.margen_blister}, 
+                          {l:'PVP Unidad', v:formData.precio_unidad, m:formData.margen_unidad} 
+                        ] : [])
                       ].map((x, i) => (
-                        <div key={i} className="bg-white p-5 rounded-[2.5rem] border-2 border-emerald-50 shadow-xl text-center space-y-2 transform hover:scale-105 transition-transform">
-                           <span className="text-[10px] font-black text-slate-400 uppercase block tracking-widest">{x.l}</span>
-                           <span className="text-2xl font-black text-emerald-700 block tracking-tighter">
+                        <div key={i} className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm space-y-1">
+                           <span className="text-xs font-semibold text-slate-500 uppercase block">{x.l}</span>
+                           <span className="text-lg font-bold text-slate-800 block">
                              ${calculatePV(x.v, x.m).toLocaleString()}
                            </span>
-                           <span className="text-[9px] font-bold text-emerald-500/60 block italic">Margen: {x.m}%</span>
+                           <span className="text-[10px] font-medium text-slate-400 block">Margen: {x.m}%</span>
                         </div>
                       ))}
                    </div>
 
-                   <div className="grid grid-cols-3 gap-6">
+                   <div className={`grid grid-cols-1 md:grid-cols-${esProductoUnico ? '1' : '3'} gap-6`}>
                       {[ 
-                        {l:'Margen Caja %', k:'porcentaje_ganancia'}, 
-                        {l:'Margen Blíster %', k:'margen_blister'}, 
-                        {l:'Margen Unidad %', k:'margen_unidad'} 
+                        {l: esProductoUnico ? 'Margen de Ganancia %' : 'Margen Caja %', k:'porcentaje_ganancia'}, 
+                        ...(!esProductoUnico ? [
+                          {l:'Margen Blíster %', k:'margen_blister'}, 
+                          {l:'Margen Unidad %', k:'margen_unidad'} 
+                        ] : [])
                       ].map((x, i) => (
-                        <div key={i} className="text-center space-y-4">
-                           <label className="text-[9px] font-black text-emerald-600 uppercase block tracking-widest">{x.l}</label>
-                           <div className="flex items-center justify-center gap-3">
-                              <button type="button" onClick={() => setFormData(p=>({...p, [x.k]: Math.max(0, (p as any)[x.k] - 5)}))} className="w-8 h-8 bg-emerald-600 text-white rounded-full flex items-center justify-center text-sm font-black shadow-lg">-</button>
-                              <span className="text-xl font-black text-emerald-700">{(formData as any)[x.k]}%</span>
-                              <button type="button" onClick={() => setFormData(p=>({...p, [x.k]: (p as any)[x.k] + 5}))} className="w-8 h-8 bg-emerald-600 text-white rounded-full flex items-center justify-center text-sm font-black shadow-lg">+</button>
+                        <div key={i} className="space-y-2">
+                           <label className="text-xs font-semibold text-slate-600 uppercase block">{x.l}</label>
+                           <div className="flex items-center gap-2">
+                              <button type="button" onClick={() => setFormData(p=>({...p, [x.k]: Math.max(0, (p as any)[x.k] - 5)}))} className="w-8 h-8 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-md flex items-center justify-center font-bold transition-colors">-</button>
+                              <span className="flex-1 text-center font-semibold text-slate-800">{(formData as any)[x.k]}%</span>
+                              <button type="button" onClick={() => setFormData(p=>({...p, [x.k]: (p as any)[x.k] + 5}))} className="w-8 h-8 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-md flex items-center justify-center font-bold transition-colors">+</button>
                            </div>
                         </div>
                       ))}
@@ -607,10 +661,13 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
               </form>
             </div>
 
-            <div className="p-10 bg-slate-900 border-t border-white/10 flex gap-6">
-              <button form="matrix-form" disabled={loading} className="flex-1 bg-indigo-600 text-white p-6 rounded-3xl text-xl font-black hover:bg-indigo-700 transition-all shadow-2xl flex items-center justify-center gap-4 disabled:opacity-50 active:scale-95 group">
-                {loading ? 'PROCESANDO...' : 'CONFIRMAR CAMBIOS'}
-                <Check className="w-6 h-6 group-hover:scale-110 transition-transform" />
+            <div className="p-6 bg-slate-50 border-t border-slate-200 flex gap-4 justify-end">
+              <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-2.5 bg-white border border-slate-300 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition-colors">
+                Cancelar
+              </button>
+              <button form="matrix-form" disabled={loading} className="px-8 py-2.5 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-all shadow-sm flex items-center gap-2 disabled:opacity-50">
+                {loading ? 'Procesando...' : 'Guardar Cambios'}
+                <Check className="w-4 h-4" />
               </button>
             </div>
           </div>
