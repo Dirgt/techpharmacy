@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams.get('q')?.trim() || ''
 
   let query = supabase
-    .from('clientes')
+    .from('clientes' as any)
     .select('id, nombre, documento, tipo_doc, tipo_cliente, telefono, email, ciudad')
     .order('nombre')
     .limit(20)
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { data, error } = await supabase
-    .from('clientes')
+    .from('clientes' as any)
     .insert({ nombre: nombre.trim(), documento, tipo_doc, tipo_cliente, telefono, email, direccion, ciudad })
     .select()
     .single()

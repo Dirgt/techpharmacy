@@ -11,8 +11,7 @@ import {
   Calendar, 
   LogOut,
   ShieldCheck,
-  PackagePlus,
-  PieChart
+  PackagePlus
 } from 'lucide-react'
 import { logout } from '@/app/actions/auth'
 

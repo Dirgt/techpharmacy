@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
@@ -9,6 +10,8 @@ export type FacturaItem = {
   cantidad_cajas: number
   cantidad_blisters: number
   cantidad_unidades: number
+  precio_unitario_base: number
+  descuento_porcentaje: number
   precio_linea: number
   precio_linea_original: number // precio sin descuento (para registro)
 }
@@ -75,7 +78,7 @@ export async function crearFactura(data: FacturaData) {
         estado_pago,
         vendedor_id:           data.vendedor_id,
         caja_sesion_id:        data.caja_sesion_id,
-      })
+      } as any)
       .select('id, numero')
       .single()
 
@@ -111,7 +114,7 @@ export async function crearFactura(data: FacturaData) {
           cajas: newCajas, blisters: newBlisters, unidades: newUnidades
         }).eq('producto_id', item.producto_id)
 
-        await supabase.from('auditoria_inventario').insert({
+        await supabase.from('auditoria_inventario' as any).insert({
           inventario_id:    invCurrent.id,
           operador:         operatorName,
           accion:           'VENTA',
@@ -156,7 +159,7 @@ export async function getInventarioPOS() {
   const supabase = await createClient()
   // Usamos vista_inventario_completo para tener los nombres, laboratorios y precios actualizados
   const { data, error } = await supabase
-    .from('vista_inventario_completo')
+    .from('vista_inventario_completo' as any)
     .select('*')
     .order('nombre_producto', { ascending: true })
     
@@ -192,7 +195,7 @@ export async function marcarComoPagada(facturaId: string, cajaSesionId: string, 
         estado_pago: 'pagado',
         metodo_pago: metodoPago,
         caja_sesion_id: cajaSesionId
-      })
+      } as any)
       .eq('id', facturaId)
 
     if (error) throw error
@@ -207,7 +210,7 @@ export async function marcarComoPagada(facturaId: string, cajaSesionId: string, 
 export async function getCartera() {
   const supabase = await createClient()
   const { data, error } = await supabase
-    .from('vista_cartera')
+    .from('vista_cartera' as any)
     .select('*')
     .order('fecha_vencimiento', { ascending: true })
 

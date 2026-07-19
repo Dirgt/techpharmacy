@@ -40,14 +40,13 @@ export async function createTurno(formData: FormData) {
   const { error } = await supabase.from('cronogramas').insert({
     usuario_id,
     fecha,
-    turno,
-    creado_por: user?.id
+    turno
   })
 
   if (error) return { error: error.message }
 
   // Registro en logs
-  await supabase.from('logs_actividad').insert({
+  await supabase.from('logs_actividad' as any).insert({
     usuario_id: user?.id,
     accion: 'CREAR_TURNO',
     detalles: `Turno ${turno} creado para el ${fecha}`
@@ -79,7 +78,7 @@ export async function updateTurno(id: string, formData: FormData) {
 
   if (error) return { error: error.message }
 
-  await supabase.from('logs_actividad').insert({
+  await supabase.from('logs_actividad' as any).insert({
     usuario_id: user?.id,
     accion: 'ACTUALIZAR_TURNO',
     detalles: `Turno ID ${id} actualizado a ${turno} en ${fecha}`
@@ -96,7 +95,7 @@ export async function deleteTurno(id: string) {
   const { error } = await supabase.from('cronogramas').delete().eq('id', id)
   if (error) return { error: error.message }
 
-  await supabase.from('logs_actividad').insert({
+  await supabase.from('logs_actividad' as any).insert({
     usuario_id: user?.id,
     accion: 'ELIMINAR_TURNO',
     detalles: `Turno ID ${id} eliminado`
@@ -130,20 +129,19 @@ export async function clonePreviousMonth(targetDate: string) {
   if (!oldTurnos || oldTurnos.length === 0) return { error: 'No se encontraron turnos en el mes anterior para clonar.' }
 
   // 2. Preparar nuevos turnos ajustando la fecha al mes actual
-  const newTurnos = oldTurnos.map(t => {
+  const newTurnos = oldTurnos.flatMap(t => {
     const oldDate = new Date(t.fecha + 'T00:00:00')
     const newDate = new Date(target.getFullYear(), target.getMonth(), oldDate.getDate())
     
     // Validar que el día exista en el mes actual (ej: 31 de marzo -> abril tiene 30)
-    if (newDate.getMonth() !== target.getMonth()) return null
+    if (newDate.getMonth() !== target.getMonth()) return []
 
-    return {
+    return [{
       usuario_id: t.usuario_id,
       turno: t.turno,
-      fecha: newDate.toISOString().split('T')[0],
-      creado_por: user?.id
-    }
-  }).filter(Boolean)
+      fecha: newDate.toISOString().split('T')[0]
+    }]
+  })
 
   // 3. Insertar masivamente
   const { error: insertError } = await supabase.from('cronogramas').insert(newTurnos)

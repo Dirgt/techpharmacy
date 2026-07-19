@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
@@ -94,7 +95,7 @@ export async function updateUser(id: string, formData: FormData) {
   }
 
   // Registrar en el log
-  let cambios = []
+  const cambios = []
   if (updateData.full_name && updateData.full_name !== oldUser?.full_name) cambios.push(`nombre: ${oldUser?.full_name} -> ${updateData.full_name}`)
   if (updateData.role && updateData.role !== oldUser?.role) cambios.push(`rol: ${oldUser?.role} -> ${updateData.role}`)
   if (updateData.status && updateData.status !== oldUser?.status) cambios.push(`estado: ${oldUser?.status} -> ${updateData.status}`)

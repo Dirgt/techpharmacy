@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
 import { useState } from 'react'
@@ -22,9 +23,7 @@ import {
 } from '@/components/ui/dialog'
 import { 
   UsersIcon, 
-  UserPlus, 
-  Clock,
-  ShieldCheck,
+  UserPlus
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'

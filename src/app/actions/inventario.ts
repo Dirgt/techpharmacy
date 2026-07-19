@@ -9,7 +9,7 @@ import { revalidatePath } from 'next/cache'
 export async function getInventario() {
   const supabase = await createClient()
   const { data, error } = await supabase
-    .from('vista_inventario_completo')
+    .from('vista_inventario_completo' as any)
     .select('*')
     .order('nombre_producto', { ascending: true })
 
@@ -27,7 +27,7 @@ export async function getInventario() {
 export async function getAuditoria(inventarioId: string) {
   const supabase = await createClient()
   const { data, error } = await supabase
-    .from('auditoria_inventario')
+    .from('auditoria_inventario' as any)
     .select('*')
     .eq('inventario_id', inventarioId)
     .order('created_at', { ascending: false })
@@ -62,7 +62,7 @@ export async function getLaboratorios() {
 export async function buscarProductoPorCodigo(codigo: string) {
   const supabase = await createClient()
   const { data, error } = await supabase
-    .from('vista_inventario_completo')
+    .from('vista_inventario_completo' as any)
     .select('*')
     .eq('codigo', codigo)
     .single()
@@ -113,10 +113,9 @@ export async function upsertInventario(data: {
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
-  const operador = user?.email || 'admin'
 
   // 1. Obtener estado previo para auditoría
-  let oldData = null
+  let oldData: any = null
   if (data.id) {
     const { data: existing } = await supabase
       .from('inventario')
@@ -159,6 +158,7 @@ export async function upsertInventario(data: {
   }
 
   // 3. Ejecutar Upsert en la tabla inventario con conflict explícito
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const upsertPayload: any = {
     producto_id: finalProductoId,
     fecha_vencimiento: data.fecha_vencimiento || null,
@@ -183,11 +183,12 @@ export async function upsertInventario(data: {
     upsertPayload.id = data.id
   }
 
-  const { data: upserted, error } = await supabase
+  const { data: _upserted, error } = await supabase
     .from('inventario')
     .upsert(upsertPayload, { onConflict: 'producto_id' })
     .select()
     .single()
+  const upserted: any = _upserted
 
   if (error) {
     console.error('Upsert Error:', JSON.stringify(error, null, 2))
@@ -229,7 +230,7 @@ export async function upsertInventario(data: {
   
   let detalles = `Operación: ${accion} en ${data.nombre}. `
   
-  let stockCambios = []
+  const stockCambios = []
   if (diffCajas !== 0) stockCambios.push(`Cajas: ${oldCajas} → ${newCajas}`)
   if (diffBlisters !== 0) stockCambios.push(`Blísters: ${oldBlisters} → ${newBlisters}`)
   if (diffUnidades !== 0) stockCambios.push(`Unidades: ${oldUnidades} → ${newUnidades}`)
@@ -254,7 +255,7 @@ export async function upsertInventario(data: {
   if (data.ubicacion && data.ubicacion !== oldData?.ubicacion) detalles += `Ubicación: ${oldData?.ubicacion || 'N/A'} → ${data.ubicacion}. `
 
   const { error: auditError } = await supabase
-    .from('auditoria_inventario')
+    .from('auditoria_inventario' as any)
     .insert({
       inventario_id: upserted.id,
       operador: operadorReal,

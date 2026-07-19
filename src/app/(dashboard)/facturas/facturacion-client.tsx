@@ -1,7 +1,9 @@
+/* eslint-disable react-hooks/set-state-in-effect */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
-import { Search, Plus, Minus, Trash2, ShoppingCart, User, CreditCard, Banknote, Wallet, ReceiptText, CheckCircle2, BarChart2, FileDown, RefreshCw, UserPlus, ChevronDown, X, Building2, Users } from 'lucide-react'
+import { Search, Plus, Minus, Trash2, ShoppingCart, Wallet, ReceiptText, CheckCircle2, BarChart2, FileDown, RefreshCw, ChevronDown, X, Building2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { crearFactura, FacturaData, FacturaItem, marcarComoPagada } from '@/app/actions/facturas'
 import { useRouter } from 'next/navigation'
@@ -140,7 +142,7 @@ export function FacturacionClient({
       } else {
         toast.error('Error cargando ventas')
       }
-    } catch (e) {
+    } catch {
       toast.error('Error de conexión al cargar ventas')
     }
     setLoadingVentas(false)
@@ -217,7 +219,8 @@ export function FacturacionClient({
         cantidad_unidades: 1, 
         precio_unitario_base: Number(product.precio_unidad || 0),
         descuento_porcentaje: descuentoPct,
-        precio_linea: Number(product.precio_unidad || 0) * (1 - (descuentoPct / 100))
+        precio_linea: Number(product.precio_unidad || 0) * (1 - (descuentoPct / 100)),
+        precio_linea_original: Number(product.precio_unidad || 0)
       }
       return [...prev, newItem]
     })
