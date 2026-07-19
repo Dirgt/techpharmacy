@@ -18,7 +18,6 @@ import { logout } from '@/app/actions/auth'
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Inventario', href: '/inventario', icon: Package },
-  { name: 'Productos', href: '/productos', icon: PackagePlus },
   { name: 'Facturación', href: '/facturas', icon: ReceiptText },
   { name: 'Usuarios', href: '/usuarios', icon: Users },
   { name: 'Cronograma', href: '/cronograma', icon: Calendar },
