@@ -154,6 +154,106 @@ export type Database = {
         }
         Relationships: []
       }
+      compra_detalles: {
+        Row: {
+          cantidad: number
+          compra_id: string | null
+          costo_unitario: number
+          id: string
+          producto_id: string | null
+          subtotal: number
+        }
+        Insert: {
+          cantidad?: number
+          compra_id?: string | null
+          costo_unitario?: number
+          id?: string
+          producto_id?: string | null
+          subtotal?: number
+        }
+        Update: {
+          cantidad?: number
+          compra_id?: string | null
+          costo_unitario?: number
+          id?: string
+          producto_id?: string | null
+          subtotal?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "compra_detalles_compra_id_fkey"
+            columns: ["compra_id"]
+            isOneToOne: false
+            referencedRelation: "compras"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "compra_detalles_producto_id_fkey"
+            columns: ["producto_id"]
+            isOneToOne: false
+            referencedRelation: "productos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "compra_detalles_producto_id_fkey"
+            columns: ["producto_id"]
+            isOneToOne: false
+            referencedRelation: "vista_inventario_completo"
+            referencedColumns: ["producto_id"]
+          },
+        ]
+      }
+      compras: {
+        Row: {
+          caja_sesion_id: string | null
+          created_at: string | null
+          estado_pago: string
+          fecha_emision: string
+          id: string
+          metodo_pago: string | null
+          numero_factura: string
+          proveedor_id: string | null
+          total: number
+        }
+        Insert: {
+          caja_sesion_id?: string | null
+          created_at?: string | null
+          estado_pago?: string
+          fecha_emision?: string
+          id?: string
+          metodo_pago?: string | null
+          numero_factura: string
+          proveedor_id?: string | null
+          total?: number
+        }
+        Update: {
+          caja_sesion_id?: string | null
+          created_at?: string | null
+          estado_pago?: string
+          fecha_emision?: string
+          id?: string
+          metodo_pago?: string | null
+          numero_factura?: string
+          proveedor_id?: string | null
+          total?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "compras_caja_sesion_id_fkey"
+            columns: ["caja_sesion_id"]
+            isOneToOne: false
+            referencedRelation: "caja_sesiones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "compras_proveedor_id_fkey"
+            columns: ["proveedor_id"]
+            isOneToOne: false
+            referencedRelation: "proveedores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cronogramas: {
         Row: {
           creado_por: string | null
@@ -325,6 +425,44 @@ export type Database = {
             columns: ["vendedor_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gastos: {
+        Row: {
+          caja_sesion_id: string
+          comprobante: string | null
+          concepto: string
+          created_at: string | null
+          id: string
+          monto: number
+          tipo: string
+        }
+        Insert: {
+          caja_sesion_id: string
+          comprobante?: string | null
+          concepto: string
+          created_at?: string | null
+          id?: string
+          monto: number
+          tipo?: string
+        }
+        Update: {
+          caja_sesion_id?: string
+          comprobante?: string | null
+          concepto?: string
+          created_at?: string | null
+          id?: string
+          monto?: number
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gastos_caja_sesion_id_fkey"
+            columns: ["caja_sesion_id"]
+            isOneToOne: false
+            referencedRelation: "caja_sesiones"
             referencedColumns: ["id"]
           },
         ]
@@ -546,6 +684,36 @@ export type Database = {
         }
         Relationships: []
       }
+      proveedores: {
+        Row: {
+          created_at: string | null
+          dias_credito: number | null
+          documento_nit: string | null
+          email: string | null
+          id: string
+          nombre: string
+          telefono: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          dias_credito?: number | null
+          documento_nit?: string | null
+          email?: string | null
+          id?: string
+          nombre: string
+          telefono?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          dias_credito?: number | null
+          documento_nit?: string | null
+          email?: string | null
+          id?: string
+          nombre?: string
+          telefono?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       vista_cartera: {
@@ -604,6 +772,29 @@ export type Database = {
       }
     }
     Functions: {
+      registrar_compra_tx: {
+        Args: {
+          p_caja_sesion_id: string
+          p_detalles: Database["public"]["CompositeTypes"]["compra_detalle_input"][]
+          p_estado_pago: string
+          p_metodo_pago: string
+          p_numero_factura: string
+          p_proveedor_id: string
+          p_total: number
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      registrar_gasto_tx: {
+        Args: {
+          p_caja_sesion_id: string
+          p_comprobante?: string
+          p_concepto: string
+          p_monto: number
+          p_tipo: string
+        }
+        Returns: Json
+      }
       upsert_inventario_tx: {
         Args: {
           p_blisters: number
@@ -635,7 +826,11 @@ export type Database = {
       [_ in never]: never
     }
     CompositeTypes: {
-      [_ in never]: never
+      compra_detalle_input: {
+        producto_id: string | null
+        cantidad: number | null
+        costo_unitario: number | null
+      }
     }
   }
 }

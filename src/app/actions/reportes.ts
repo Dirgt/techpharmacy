@@ -50,3 +50,41 @@ export async function getVentasDelDia() {
 
   return { success: true, data: facturas || [] }
 }
+
+export async function getReporteFinancieroDiario() {
+  const supabase = await createClient()
+  
+  const ahora = new Date()
+  const inicioDia = new Date(Date.UTC(ahora.getUTCFullYear(), ahora.getUTCMonth(), ahora.getUTCDate(), 0, 0, 0, 0)).toISOString()
+  const finDia = new Date(Date.UTC(ahora.getUTCFullYear(), ahora.getUTCMonth(), ahora.getUTCDate(), 23, 59, 59, 999)).toISOString()
+
+  // 1. Obtener ventas (facturas)
+  const { data: facturas } = await supabase
+    .from('facturas')
+    .select('total, metodo_pago, estado_pago')
+    .gte('created_at', inicioDia)
+    .lte('created_at', finDia)
+
+  // 2. Obtener gastos
+  const { data: gastos } = await supabase
+    .from('gastos')
+    .select('monto, tipo')
+    .gte('created_at', inicioDia)
+    .lte('created_at', finDia)
+
+  // 3. Obtener compras
+  const { data: compras } = await supabase
+    .from('compras')
+    .select('total, metodo_pago, estado_pago')
+    .gte('created_at', inicioDia)
+    .lte('created_at', finDia)
+
+  return {
+    success: true,
+    data: {
+      facturas: facturas || [],
+      gastos: gastos || [],
+      compras: compras || []
+    }
+  }
+}

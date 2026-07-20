@@ -11,7 +11,10 @@ import {
   Calendar, 
   LogOut,
   ShieldCheck,
-  PackagePlus
+  PackagePlus,
+  Truck,
+  ShoppingCart,
+  LineChart
 } from 'lucide-react'
 import { logout } from '@/app/actions/auth'
 
@@ -19,6 +22,9 @@ const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Inventario', href: '/inventario', icon: Package },
   { name: 'Facturación', href: '/facturas', icon: ReceiptText },
+  { name: 'Compras', href: '/compras', icon: ShoppingCart },
+  { name: 'Proveedores', href: '/proveedores', icon: Truck },
+  { name: 'Reportes', href: '/reportes', icon: LineChart },
   { name: 'Usuarios', href: '/usuarios', icon: Users },
   { name: 'Cronograma', href: '/cronograma', icon: Calendar },
 ]
@@ -44,6 +50,7 @@ export function Sidebar() {
             <Link
               key={item.name}
               href={item.href}
+              prefetch={true}
               className={cn(
                 "flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-2xl transition-all duration-200 group",
                 isActive 

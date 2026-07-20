@@ -22,6 +22,17 @@ export async function getInventario() {
   return data
 }
 
+export async function getProductos() {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('productos')
+    .select('*')
+    .order('nombre', { ascending: true })
+
+  if (error) return { success: false, error: error.message }
+  return { success: true, data }
+}
+
 /**
  * Obtiene el historial de auditoría de un producto
  */

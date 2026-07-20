@@ -9,6 +9,7 @@ import { crearFactura, FacturaData, FacturaItem, marcarComoPagada } from '@/app/
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { abrirCaja, cerrarCaja } from '@/app/actions/caja'
+import { GastoModal } from '@/components/tesoreria/gasto-modal'
 
 export function FacturacionClient({ 
   inventarioInitial, 
@@ -442,6 +443,7 @@ export function FacturacionClient({
               <FileDown className="w-4 h-4" />
               Exportar CSV
             </button>
+            <GastoModal cajaAbierta={cajaAbierta} />
             <button onClick={() => setShowCloseCajaModal(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 text-sm font-black transition-all active:scale-95 ml-2">
               <Lock className="w-4 h-4" />
               Cerrar Caja
