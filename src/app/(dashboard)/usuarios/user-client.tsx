@@ -23,11 +23,12 @@ import {
 } from '@/components/ui/dialog'
 import { 
   UsersIcon, 
-  UserPlus
+  UserPlus,
+  Settings
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
-import { createTestUser, updateUser } from '@/app/actions/usuarios'
+import { createTestUser, updateUser, resetAdminUserPassword } from '@/app/actions/usuarios'
 import { UserTable } from './user-table'
 import { useRouter } from 'next/navigation'
 
@@ -38,9 +39,12 @@ interface UserClientProps {
 export function UserClient({ initialUsers }: UserClientProps) {
   const [loading, setLoading] = useState(false)
   const [editingUser, setEditingUser] = useState<any>(null)
+  const [configUser, setConfigUser] = useState<any>(null)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(false)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [password, setPassword] = useState('')
+  const [newConfigPassword, setNewConfigPassword] = useState('')
   const router = useRouter()
 
   const calculatePasswordStrength = (pass: string) => {
@@ -92,6 +96,21 @@ export function UserClient({ initialUsers }: UserClientProps) {
       router.refresh()
     } else {
       toast.error(result.error || 'Error al actualizar')
+    }
+    setLoading(false)
+  }
+
+  async function handleConfigSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!configUser) return
+    setLoading(true)
+    const result = await resetAdminUserPassword(configUser.id, newConfigPassword)
+    if (result.success) {
+      toast.success('Contraseña actualizada correctamente para ' + configUser.full_name)
+      setIsConfigDialogOpen(false)
+      setNewConfigPassword('')
+    } else {
+      toast.error(result.error || 'Error al actualizar la contraseña')
     }
     setLoading(false)
   }
@@ -197,10 +216,17 @@ export function UserClient({ initialUsers }: UserClientProps) {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <UserTable initialUsers={initialUsers} onEdit={(user) => {
-            setEditingUser(user)
-            setIsEditDialogOpen(true)
-          }} />
+          <UserTable 
+            initialUsers={initialUsers} 
+            onEdit={(user) => {
+              setEditingUser(user)
+              setIsEditDialogOpen(true)
+            }}
+            onConfig={(user) => {
+              setConfigUser(user)
+              setIsConfigDialogOpen(true)
+            }}
+          />
         </CardContent>
       </Card>
 

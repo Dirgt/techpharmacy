@@ -14,7 +14,8 @@ import {
   PackagePlus,
   Truck,
   ShoppingCart,
-  LineChart
+  LineChart,
+  Settings
 } from 'lucide-react'
 import { logout } from '@/app/actions/auth'
 
@@ -71,7 +72,20 @@ export function Sidebar() {
         })}
       </div>
 
-      <div className="p-4 border-t border-slate-100 bg-slate-50/30">
+      <div className="p-4 border-t border-slate-100 bg-slate-50/30 space-y-2">
+        <Link
+          href="/configuracion"
+          prefetch={true}
+          className={cn(
+            "flex w-full items-center gap-3 px-4 py-3 text-sm font-bold rounded-2xl transition-all duration-200",
+            pathname === '/configuracion'
+              ? "bg-emerald-50 text-emerald-700 shadow-sm shadow-emerald-600/5"
+              : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
+          )}
+        >
+          <Settings className={cn("h-5 w-5", pathname === '/configuracion' ? "text-emerald-600" : "text-slate-400")} />
+          Mi Perfil
+        </Link>
         <button
           onClick={() => logout()}
           className="flex w-full items-center gap-3 px-4 py-3 text-sm font-bold text-slate-500 rounded-2xl hover:text-red-600 hover:bg-red-50 transition-all duration-200"

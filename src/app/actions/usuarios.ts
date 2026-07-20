@@ -2,6 +2,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
 
 async function logActividad(supabase: any, accion: string, detalles: string, entidad_id?: string) {
@@ -135,5 +136,31 @@ export async function deleteUser(id: string) {
   )
 
   revalidatePath('/usuarios')
+  return { success: true }
+}
+
+export async function resetAdminUserPassword(userId: string, newPassword: string) {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!serviceRoleKey) {
+    return { error: 'Falta la clave maestra SUPABASE_SERVICE_ROLE_KEY en .env.local para cambiar contraseñas de otros usuarios.' }
+  }
+  
+  if (newPassword.length < 6) {
+    return { error: 'La contraseña debe tener al menos 6 caracteres' }
+  }
+
+  const supabaseAdmin = createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false }
+  })
+
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+    password: newPassword
+  })
+
+  if (error) return { error: error.message }
+
+  const supabase = await createClient()
+  await logActividad(supabase, 'CAMBIO_CONTRASEÑA_ADMIN', `El administrador cambió la contraseña del usuario ${userId}`)
+
   return { success: true }
 }

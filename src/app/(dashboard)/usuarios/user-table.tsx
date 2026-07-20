@@ -28,9 +28,10 @@ import { cn } from '@/lib/utils'
 interface UserTableProps {
   initialUsers: any[]
   onEdit: (user: any) => void
+  onConfig: (user: any) => void
 }
 
-export function UserTable({ initialUsers, onEdit }: UserTableProps) {
+export function UserTable({ initialUsers, onEdit, onConfig }: UserTableProps) {
   const [loading, setLoading] = useState<string | null>(null)
   const router = useRouter()
 
@@ -133,7 +134,7 @@ export function UserTable({ initialUsers, onEdit }: UserTableProps) {
                   variant="ghost" 
                   size="icon" 
                   className="h-11 w-11 rounded-2xl hover:bg-slate-100 text-slate-400 hover:text-slate-900 transition-all active:scale-95"
-                  onClick={() => toast.info('La configuración de contraseñas y permisos avanzados debe hacerse desde el panel de Supabase.')}
+                  onClick={() => onConfig(user)}
                   title="Configuración"
                 >
                   <Settings className="h-5 w-5" />
