@@ -68,7 +68,7 @@ export function FacturacionClient({
         .select('numero')
         .order('numero', { ascending: false })
         .limit(1)
-        .single()
+        .maybeSingle()
       
       if (!error && data) {
         setNextFacturaNum(data.numero + 1)
