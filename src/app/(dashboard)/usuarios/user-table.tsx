@@ -17,7 +17,8 @@ import {
   Shield, 
   ShieldCheck, 
   Mail,
-  Loader2
+  Loader2,
+  Settings
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { deleteUser } from '@/app/actions/usuarios'
@@ -132,7 +133,17 @@ export function UserTable({ initialUsers, onEdit }: UserTableProps) {
                   variant="ghost" 
                   size="icon" 
                   className="h-11 w-11 rounded-2xl hover:bg-slate-100 text-slate-400 hover:text-slate-900 transition-all active:scale-95"
+                  onClick={() => toast.info('La configuración de contraseñas y permisos avanzados debe hacerse desde el panel de Supabase.')}
+                  title="Configuración"
+                >
+                  <Settings className="h-5 w-5" />
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-11 w-11 rounded-2xl hover:bg-slate-100 text-slate-400 hover:text-slate-900 transition-all active:scale-95"
                   onClick={() => onEdit(user)}
+                  title="Editar"
                 >
                   <Pencil className="h-5 w-5" />
                 </Button>
