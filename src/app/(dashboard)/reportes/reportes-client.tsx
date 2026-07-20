@@ -3,8 +3,15 @@
 
 import { useMemo } from 'react'
 import { FileDown, DollarSign, Receipt, CreditCard, Wallet, Banknote } from 'lucide-react'
+import { Database } from '@/lib/supabase/database.types'
 
-export default function ReportesClient({ initialFacturas }: { initialFacturas: any[] }) {
+type FacturaRow = Database['public']['Tables']['facturas']['Row']
+type FacturaWithRelations = FacturaRow & {
+  vendedor: { full_name: string | null, role: string | null } | null,
+  detalles: any[]
+}
+
+export default function ReportesClient({ initialFacturas }: { initialFacturas: FacturaWithRelations[] }) {
   const kpis = useMemo(() => {
     let totalEfectivo = 0
     let totalTarjeta = 0
@@ -43,7 +50,7 @@ export default function ReportesClient({ initialFacturas }: { initialFacturas: a
     ].join(',')
 
     const filas = initialFacturas.map(f => {
-      const fecha = new Date(f.created_at).toLocaleString()
+      const fecha = new Date(f.created_at || new Date().toISOString()).toLocaleString()
       const vendedor = f.vendedor?.full_name || 'Desconocido'
       return `${f.numero},"${fecha}","${f.cliente_nombre}","${f.cliente_documento}","${vendedor}","${f.metodo_pago}",${f.total}`
     }).join('\n')
@@ -164,7 +171,7 @@ export default function ReportesClient({ initialFacturas }: { initialFacturas: a
                     </td>
                     <td className="px-6 py-4">
                       <span className="font-bold text-slate-600">
-                        {new Date(f.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        {new Date(f.created_at || new Date().toISOString()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                       </span>
                     </td>
                     <td className="px-6 py-4">

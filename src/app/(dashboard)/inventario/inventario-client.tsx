@@ -13,10 +13,14 @@ import { format, isAfter, isBefore, addDays, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale/es'
 import { toast } from 'sonner'
 import { upsertInventario, buscarProductoPorCodigo, createLaboratorio, getAuditoria } from '@/app/actions/inventario'
+import { Database } from '@/lib/supabase/database.types'
+
+type InventarioRow = Database['public']['Views']['vista_inventario_completo']['Row']
+type LaboratorioRow = Database['public']['Tables']['laboratorios']['Row']
 
 interface InventarioClientProps {
-  initialData: any[]
-  laboratorios: any[]
+  initialData: InventarioRow[]
+  laboratorios: LaboratorioRow[]
 }
 
 export default function InventarioClient({ initialData, laboratorios }: InventarioClientProps) {
@@ -84,7 +88,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
     
     const performance = data.map(item => {
       const costo = parseFloat(item.precio_caja as any) || 0
-      const margen = parseFloat((item.margen_caja || item.porcentaje_ganancia) as any) || 0
+      const margen = parseFloat((item.margen_caja || 0) as any) || 0
       const stock = parseInt(item.cajas as any) || 0
       const profit = (costo * (margen / 100)) * stock
       return { name: item.nombre_producto, totalProfit: profit }
@@ -104,7 +108,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       starProduct: performance[0]?.name || 'N/A',
       estimatedProfit: data.reduce((acc, item) => {
         const costo = parseFloat(item.precio_caja as any) || 0
-        const margen = parseFloat((item.margen_caja || item.porcentaje_ganancia) as any) || 0
+        const margen = parseFloat((item.margen_caja || 0) as any) || 0
         const stock = parseInt(item.cajas as any) || 0
         return acc + ((costo * (margen / 100)) * stock)
       }, 0),
@@ -119,11 +123,11 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       item.laboratorio?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.seccion?.toLowerCase().includes(searchTerm.toLowerCase())
     )
-    if (filterType === 'stock_bajo') result = result.filter(item => item.cajas <= (item.stock_minimo || 2))
+    if (filterType === 'stock_bajo') result = result.filter(item => (item.cajas || 0) <= (item.stock_minimo || 2))
     if (filterType === 'vencimiento') result = result.filter(item => item.fecha_vencimiento && isBefore(parseISO(item.fecha_vencimiento), addDays(new Date(), 90)))
     if (filterType === 'dead_stock') {
         const tenDaysAgo = addDays(new Date(), -10)
-        result = result.filter(item => isBefore(parseISO(item.updated_at), tenDaysAgo) && item.cajas > 0)
+        result = result.filter(item => item.updated_at ? (isBefore(parseISO(item.updated_at), tenDaysAgo) && (item.cajas || 0) > 0) : false)
     }
     return result
   }, [data, searchTerm, filterType])
@@ -150,21 +154,21 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       "sep=;", 
       headers.join(";"),
       ...filteredData.map(item => {
-        const ventaTotal = calculatePV(item.precio_caja, item.margen_caja || item.porcentaje_ganancia) * item.cajas
-        const costoTotal = item.precio_caja * item.cajas
+        const ventaTotal = calculatePV(item.precio_caja || 0, item.margen_caja || 0) * (item.cajas || 0)
+        const costoTotal = (item.precio_caja || 0) * (item.cajas || 0)
         return [
-          item.codigo,
-          `"${item.nombre_producto}"`,
-          `"${item.laboratorio}"`,
+          item.codigo || 'N/A',
+          `"${item.nombre_producto || 'N/A'}"`,
+          `"${item.laboratorio || 'N/A'}"`,
           `"${item.seccion || 'N/A'}"`,
           `"${item.ubicacion || 'N/A'}"`,
           item.lote || 'N/A',
           item.registro_invima || 'N/A',
-          item.fecha_vencimiento,
-          item.cajas,
+          item.fecha_vencimiento || 'N/A',
+          item.cajas || 0,
           costoTotal.toFixed(2).replace('.', ','),
           ventaTotal.toFixed(2).replace('.', ','),
-          item.porcentaje_ganancia
+          item.margen_caja || 0
         ].join(";")
       })
     ]
@@ -361,12 +365,12 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
             </thead>
             <tbody className="divide-y divide-slate-50">
               {paginatedData.map((item) => {
-                const pvCaja = calculatePV(item.precio_caja, item.margen_caja || item.porcentaje_ganancia)
-                const pvBlister = calculatePV(item.precio_blister, item.margen_blister)
-                const pvUnidad = calculatePV(item.precio_unidad, item.margen_unidad)
+                const pvCaja = calculatePV(item.precio_caja || 0, item.margen_caja || 0)
+                const pvBlister = calculatePV(item.precio_blister || 0, item.margen_blister || 0)
+                const pvUnidad = calculatePV(item.precio_unidad || 0, item.margen_unidad || 0)
                 
-                const expStatus = getExpirationStatus(item.fecha_vencimiento)
-                const isCritical = item.cajas <= 2
+                const expStatus = getExpirationStatus(item.fecha_vencimiento || '')
+                const isCritical = (item.cajas || 0) <= 2
 
                 return (
                   <tr key={item.inventario_id} className="hover:bg-slate-50/80 transition-all group">
@@ -378,7 +382,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                         <div className="flex flex-col min-w-0">
                           <div className="flex items-center gap-2">
                              <div className="flex items-center gap-2">
-                             <span className="text-sm font-black text-slate-900 uppercase truncate max-w-[200px] leading-tight group-hover:text-indigo-600" title={item.nombre_producto}>{item.nombre_producto}</span>
+                             <span className="text-sm font-black text-slate-900 uppercase truncate max-w-[200px] leading-tight group-hover:text-indigo-600" title={item.nombre_producto || undefined}>{item.nombre_producto}</span>
                              <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">{item.codigo}</span>
                           </div>
                              <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">{item.codigo}</span>
@@ -476,8 +480,8 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                           if (found) {
                             setFormData(prev => ({
                               ...prev,
-                              producto_id: found.producto_id,
-                              nombre: found.nombre_producto,
+                              producto_id: found.producto_id || '',
+                              nombre: found.nombre_producto || '',
                               laboratorio_id: found.laboratorio_id || '',
                               seccion: found.seccion || ''
                             }))

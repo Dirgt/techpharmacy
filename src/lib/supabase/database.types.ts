@@ -604,7 +604,32 @@ export type Database = {
       }
     }
     Functions: {
-      [_ in never]: never
+      upsert_inventario_tx: {
+        Args: {
+          p_blisters: number
+          p_cajas: number
+          p_codigo: string
+          p_fecha_vencimiento: string
+          p_inventario_id?: string
+          p_laboratorio_id: string
+          p_lote: string
+          p_margen_blister: number
+          p_margen_unidad: number
+          p_nombre: string
+          p_porcentaje_ganancia: number
+          p_precio_blister: number
+          p_precio_caja: number
+          p_precio_unidad: number
+          p_principio_activo: string
+          p_producto_id: string
+          p_registro_invima: string
+          p_seccion: string
+          p_stock_minimo: number
+          p_ubicacion: string
+          p_unidades: number
+        }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never
