@@ -290,6 +290,42 @@ export function UserClient({ initialUsers }: UserClientProps) {
           )}
         </DialogContent>
       </Dialog>
+      <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
+        <DialogContent className="bg-white border-slate-200 text-slate-900 max-w-md rounded-3xl p-8 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black flex items-center">
+              <Settings className="w-6 h-6 mr-2 text-slate-700" />
+              Configurar Contraseña
+            </DialogTitle>
+            <DialogDescription className="text-slate-500 font-medium">
+              Cambiar la contraseña del usuario {configUser?.full_name}. Requiere permisos avanzados en el servidor.
+            </DialogDescription>
+          </DialogHeader>
+          {configUser && (
+            <form onSubmit={handleConfigSubmit} className="space-y-6 pt-6">
+              <div className="space-y-3">
+                <Label className="text-xs font-black text-slate-500 uppercase tracking-widest">Nueva Contraseña</Label>
+                <Input 
+                  type="password" 
+                  value={newConfigPassword}
+                  onChange={(e) => setNewConfigPassword(e.target.value)}
+                  placeholder="Mínimo 6 caracteres"
+                  className="h-12 rounded-xl bg-slate-50 border-slate-200 font-medium px-4"
+                  required
+                />
+              </div>
+              <div className="flex gap-4 pt-4">
+                <Button type="button" variant="ghost" className="flex-1 rounded-xl py-6 font-bold hover:bg-slate-50" onClick={() => setIsConfigDialogOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" className="flex-1 bg-slate-900 hover:bg-slate-800 text-white rounded-xl py-6 font-bold" disabled={loading}>
+                  {loading ? 'Guardando...' : 'Actualizar'}
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
