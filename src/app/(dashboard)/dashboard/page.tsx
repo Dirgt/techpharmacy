@@ -30,7 +30,7 @@ export default async function DashboardPage() {
           Resumen Operativo
         </h1>
         <p className="text-slate-500 text-lg font-medium">
-          Bienvenido, <span className="text-emerald-600 font-bold">{user?.email}</span>. Aquí tienes el estado actual de la farmacia.
+          Bienvenido, <span className="text-emerald-600 font-bold">{user?.user_metadata?.full_name || user?.email}</span>. Aquí tienes el estado actual de la farmacia.
         </p>
       </div>
 

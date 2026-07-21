@@ -221,7 +221,7 @@ export default function ComprasClient({
                   </Button>
                 </div>
 
-                <div className="rounded-md border border-slate-200 overflow-hidden">
+                <div className="rounded-md border border-slate-200">
                   <table className="w-full text-sm">
                     <thead className="bg-slate-50 text-slate-500">
                       <tr>
