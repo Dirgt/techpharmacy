@@ -738,36 +738,47 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
 
       {/* Historial Auditoría */}
       {showHistory && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/90 backdrop-blur-xl p-6 animate-in fade-in">
-           <div className="bg-white w-full max-w-3xl rounded-[5rem] shadow-2xl p-16 space-y-12 animate-in zoom-in-95">
-              <div className="flex justify-between items-center">
-                 <div className="flex items-center gap-6">
-                    <div className="p-6 bg-amber-100 text-amber-600 rounded-[2.5rem]"><History className="w-10 h-10" /></div>
-                    <div><h2 className="text-4xl font-black text-slate-900 uppercase tracking-tighter">Bitácora de Auditoría</h2><p className="text-slate-400 text-sm font-black uppercase tracking-widest">Trazabilidad inalterable</p></div>
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 md:p-6 animate-in fade-in">
+           <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl p-6 md:p-10 space-y-8 animate-in zoom-in-95 border border-slate-100">
+              <div className="flex justify-between items-start border-b border-slate-100 pb-6">
+                 <div className="flex items-center gap-5">
+                    <div className="p-4 bg-indigo-50 text-indigo-600 rounded-2xl border border-indigo-100">
+                       <History className="w-8 h-8" />
+                    </div>
+                    <div>
+                       <h2 className="text-2xl md:text-3xl font-bold text-slate-800 tracking-tight">Bitácora de Auditoría</h2>
+                       <p className="text-slate-500 text-sm font-medium mt-1">Trazabilidad y control de cambios</p>
+                    </div>
                  </div>
-                 <button onClick={() => setShowHistory(false)} className="p-6 bg-slate-50 rounded-3xl hover:bg-rose-50 hover:text-rose-600 transition-all"><Plus className="w-10 h-10 rotate-45" /></button>
+                 <button onClick={() => setShowHistory(false)} className="p-3 text-slate-400 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 hover:text-slate-700 transition-colors">
+                    <Plus className="w-6 h-6 rotate-45" />
+                 </button>
               </div>
-              <div className="space-y-8 max-h-[50vh] overflow-y-auto pr-4 custom-scrollbar">
+              <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-2 custom-scrollbar">
                  {realHistory.length > 0 ? realHistory.map((log, i) => (
-                   <div key={i} className="flex gap-8 p-10 bg-slate-50 rounded-[3.5rem] border border-slate-100 relative overflow-hidden group">
-                      <div className={`w-2 rounded-full group-hover:w-4 transition-all ${log.accion === 'ENTRADA' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-                      <div className="flex-1">
-                         <div className="flex justify-between items-start mb-3">
-                            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">{format(parseISO(log.created_at), 'dd MMM, hh:mm bbb', { locale: es })}</p>
-                            <span className={`px-3 py-1 rounded-full text-[9px] font-black text-white ${log.accion === 'ENTRADA' ? 'bg-emerald-500' : 'bg-amber-500'}`}>{log.accion}</span>
+                   <div key={i} className="flex gap-6 p-6 bg-slate-50/80 hover:bg-white rounded-2xl border border-slate-200 hover:border-indigo-100 transition-all shadow-sm hover:shadow-md relative overflow-hidden group">
+                      <div className={`absolute left-0 top-0 bottom-0 w-1.5 transition-all ${log.accion === 'ENTRADA' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                      <div className="flex-1 pl-2">
+                         <div className="flex justify-between items-start mb-2">
+                            <p className="text-xs font-semibold text-slate-400">{format(parseISO(log.created_at), 'dd MMM yyyy, hh:mm a', { locale: es })}</p>
+                            <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold ${log.accion === 'ENTRADA' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-amber-100 text-amber-700 border border-amber-200'}`}>{log.accion}</span>
                          </div>
-                         <p className="text-xl font-black text-slate-900 mb-2 uppercase tracking-tighter">OPERADOR: {log.operador ? log.operador.split('@')[0] : 'SISTEMA'}</p>
-                         <p className="text-base text-slate-500 leading-relaxed">{log.detalles}</p>
+                         <p className="text-base font-bold text-slate-700 mb-1">Operador: <span className="font-semibold text-indigo-600">{log.operador ? log.operador.split('@')[0] : 'Sistema'}</span></p>
+                         <p className="text-sm text-slate-500 leading-relaxed">{log.detalles}</p>
                       </div>
                    </div>
                  )) : (
-                   <div className="text-center py-20 bg-slate-50 rounded-[4rem] border-2 border-dashed border-slate-200">
-                      <Info className="w-16 h-16 text-slate-300 mx-auto mb-6" />
-                      <p className="text-slate-400 font-black uppercase tracking-widest">Sin registros de auditoría</p>
+                   <div className="text-center py-16 bg-slate-50 rounded-2xl border border-dashed border-slate-300">
+                      <Info className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                      <p className="text-slate-500 font-medium">No hay registros de auditoría para este producto.</p>
                    </div>
                  )}
               </div>
-              <button onClick={() => setShowHistory(false)} className="w-full bg-slate-900 text-white p-8 rounded-[3rem] text-xl font-black uppercase tracking-widest shadow-2xl active:scale-95 transition-all">Cerrar</button>
+              <div className="pt-4 border-t border-slate-100">
+                 <button onClick={() => setShowHistory(false)} className="w-full bg-slate-800 hover:bg-slate-900 text-white p-4 rounded-xl text-sm font-bold shadow-md transition-colors flex items-center justify-center gap-2">
+                    Cerrar Bitácora
+                 </button>
+              </div>
            </div>
         </div>
       )}
