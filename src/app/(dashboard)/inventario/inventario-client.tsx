@@ -23,6 +23,61 @@ interface InventarioClientProps {
   laboratorios: LaboratorioRow[]
 }
 
+// --- COMPONENTE PVP MANUAL ---
+const PVPInput = ({ label, cost, margin, marginKey, setFormData, calculatePV }: any) => {
+  const [localVal, setLocalVal] = useState<string>('');
+  const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    if (!isFocused) {
+      setLocalVal(Number(calculatePV(cost, margin).toFixed(2)).toString());
+    }
+  }, [cost, margin, isFocused, calculatePV]);
+
+  const handleChange = (e: any) => {
+    const val = e.target.value;
+    setLocalVal(val);
+    
+    const pvp = parseFloat(val);
+    if (val === '') {
+      setFormData((p: any) => ({...p, [marginKey]: 0}));
+      return;
+    }
+    if (isNaN(pvp) || pvp < 0) return;
+    
+    if (cost > 0) {
+      if (pvp === 0) {
+         setFormData((p: any) => ({...p, [marginKey]: 0}));
+      } else {
+         const newMargin = (1 - (cost / pvp)) * 100;
+         setFormData((p: any) => ({...p, [marginKey]: Number(newMargin.toFixed(2))}));
+      }
+    }
+  };
+
+  return (
+    <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm space-y-1">
+       <span className="text-xs font-semibold text-slate-500 uppercase block mb-1">{label}</span>
+       <div className="relative">
+         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">$</span>
+         <input 
+           type="number"
+           step="0.01"
+           min="0"
+           disabled={cost <= 0}
+           title={cost <= 0 ? "Ingresa el Costo primero" : ""}
+           className="w-full pl-7 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-lg font-bold text-slate-800 focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+           value={localVal}
+           onChange={handleChange}
+           onFocus={() => setIsFocused(true)}
+           onBlur={() => { setIsFocused(false); setLocalVal(Number(calculatePV(cost, margin).toFixed(2)).toString()); }}
+         />
+       </div>
+       <span className="text-[10px] font-medium text-slate-400 block mt-1">Margen: {margin}%</span>
+    </div>
+  );
+}
+
 export default function InventarioClient({ initialData, laboratorios }: InventarioClientProps) {
   const [data, setData] = useState(initialData)
   const [searchTerm, setSearchTerm] = useState('')
@@ -62,60 +117,6 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
     stock_minimo: 2
   })
 
-  // --- COMPONENTE PVP MANUAL ---
-  const PVPInput = ({ label, cost, margin, marginKey, setFormData, calculatePV }: any) => {
-    const [localVal, setLocalVal] = useState<string>('');
-    const [isFocused, setIsFocused] = useState(false);
-
-    useEffect(() => {
-      if (!isFocused) {
-        setLocalVal(Number(calculatePV(cost, margin).toFixed(2)).toString());
-      }
-    }, [cost, margin, isFocused, calculatePV]);
-
-    const handleChange = (e: any) => {
-      const val = e.target.value;
-      setLocalVal(val);
-      
-      const pvp = parseFloat(val);
-      if (val === '') {
-        setFormData((p: any) => ({...p, [marginKey]: 0}));
-        return;
-      }
-      if (isNaN(pvp) || pvp < 0) return;
-      
-      if (cost > 0) {
-        if (pvp === 0) {
-           setFormData((p: any) => ({...p, [marginKey]: 0}));
-        } else {
-           const newMargin = (1 - (cost / pvp)) * 100;
-           setFormData((p: any) => ({...p, [marginKey]: Number(newMargin.toFixed(2))}));
-        }
-      }
-    };
-
-    return (
-      <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm space-y-1">
-         <span className="text-xs font-semibold text-slate-500 uppercase block mb-1">{label}</span>
-         <div className="relative">
-           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">$</span>
-           <input 
-             type="number"
-             step="0.01"
-             min="0"
-             disabled={cost <= 0}
-             title={cost <= 0 ? "Ingresa el Costo primero" : ""}
-             className="w-full pl-7 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-lg font-bold text-slate-800 focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-             value={localVal}
-             onChange={handleChange}
-             onFocus={() => setIsFocused(true)}
-             onBlur={() => { setIsFocused(false); setLocalVal(Number(calculatePV(cost, margin).toFixed(2)).toString()); }}
-           />
-         </div>
-         <span className="text-[10px] font-medium text-slate-400 block mt-1">Margen: {margin}%</span>
-      </div>
-    );
-  }
 
   // --- SECCIONES DE FARMACIA ---
   const SECCIONES = [
