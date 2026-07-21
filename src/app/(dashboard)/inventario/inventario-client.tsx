@@ -347,21 +347,21 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
           <button 
             key={i} 
             onClick={() => setFilterType(item.filter)}
-            className={`text-left p-6 lg:p-10 rounded-[2.5rem] lg:rounded-[3.5rem] border transition-all relative group h-full flex flex-col justify-between ${filterType === item.filter && item.filter !== 'todos' ? 'border-indigo-500 ring-[10px] lg:ring-[15px] ring-indigo-500/5 bg-white shadow-2xl' : 'bg-white border-slate-100 hover:shadow-2xl hover:-translate-y-2'}`}
+            className={`text-left p-5 lg:p-6 rounded-[2rem] lg:rounded-[2.5rem] border transition-all relative group h-full flex flex-col justify-between overflow-hidden ${filterType === item.filter && item.filter !== 'todos' ? 'border-indigo-500 ring-[8px] ring-indigo-500/5 bg-white shadow-xl' : 'bg-white border-slate-100 hover:shadow-xl hover:-translate-y-1'}`}
           >
-            <div className="flex flex-col items-start gap-4 mb-6 lg:mb-8 w-full">
-              <div className="flex items-center gap-4 w-full">
-                <div className={`p-4 lg:p-5 rounded-2xl lg:rounded-[2rem] shrink-0 ${item.bg} group-hover:scale-110 transition-transform shadow-sm`}>
-                  <item.icon className={`w-6 h-6 lg:w-8 lg:h-8 ${item.color}`} />
+            <div className="flex flex-col items-start gap-4 mb-6 w-full">
+              <div className="flex items-center gap-3 w-full">
+                <div className={`p-3 lg:p-4 rounded-xl lg:rounded-2xl shrink-0 ${item.bg} group-hover:scale-105 transition-transform shadow-sm`}>
+                  <item.icon className={`w-5 h-5 lg:w-6 lg:h-6 ${item.color}`} />
                 </div>
-                <p className="text-slate-400 text-[9px] lg:text-[10px] font-black uppercase tracking-[0.15em] lg:tracking-[0.2em] leading-tight flex-1">{item.label}</p>
+                <p className="text-slate-500 text-[10px] lg:text-[11px] font-bold uppercase tracking-wider leading-tight flex-1 break-words">{item.label}</p>
               </div>
               <div className="w-full">
-                <h3 className="text-2xl lg:text-3xl font-black text-slate-900 tracking-tighter break-words leading-none" title={item.val.toString()}>{item.val}</h3>
+                <h3 className="text-2xl lg:text-3xl font-black text-slate-900 tracking-tighter truncate" title={item.val.toString()}>{item.val}</h3>
               </div>
             </div>
-            <div className="flex items-center justify-between w-full mt-auto">
-               <span className="text-[8px] lg:text-[9px] font-black text-slate-400 uppercase bg-slate-50 px-3 py-1.5 lg:px-4 lg:py-2 rounded-xl lg:rounded-2xl border border-slate-100">{item.sub}</span>
+            <div className="flex items-center justify-between w-full mt-auto gap-2">
+               <span className="text-[9px] lg:text-[10px] font-bold text-slate-400 uppercase bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 truncate flex-1">{item.sub}</span>
                <div className={`w-2 h-2 shrink-0 rounded-full ${item.color.replace('text', 'bg')} animate-pulse`} />
             </div>
           </button>
