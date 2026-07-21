@@ -6,18 +6,36 @@ import {
   ArrowUpRight, 
   TrendingUp, 
   AlertCircle,
-  LayoutDashboard
+  LayoutDashboard,
+  AlertTriangle,
+  Clock
 } from 'lucide-react'
+import { getDashboardAlertas } from '@/app/actions/dashboard'
+import { getIngresosGastosMensuales, getReporteFinancieroDiario } from '@/app/actions/reportes'
+import { IngresosGastosChart } from '@/components/reportes/ingresos-gastos-chart'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
+  const [alertasRes, graficoRes, financieroDiaRes] = await Promise.all([
+    getDashboardAlertas(),
+    getIngresosGastosMensuales(),
+    getReporteFinancieroDiario()
+  ])
+
+  const alertas = alertasRes.success ? alertasRes.data : { vencimientos: [], vencidos: [], stockBajo: [] }
+  const datosGrafico = graficoRes.success ? graficoRes.data : []
+  const finDia = financieroDiaRes.success ? financieroDiaRes.data : { facturas: [], gastos: [], compras: [] }
+
+  const totalVentasDia = finDia.facturas.reduce((sum: number, f: any) => sum + Number(f.total || 0), 0)
+  const totalCriticos = (alertas?.vencidos?.length || 0) + (alertas?.stockBajo?.length || 0)
+
   const stats = [
-    { title: 'Ventas Totales', value: '$0.00', icon: TrendingUp, trend: '+0%', color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { title: 'Productos en Stock', value: '0', icon: Package, trend: '0 críticos', color: 'text-blue-600', bg: 'bg-blue-50' },
+    { title: 'Ventas de Hoy', value: `$${totalVentasDia.toFixed(2)}`, icon: TrendingUp, trend: 'Actual', color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { title: 'Alertas de Stock', value: alertas?.stockBajo?.length.toString() || '0', icon: Package, trend: 'Críticos', color: 'text-blue-600', bg: 'bg-blue-50' },
     { title: 'Usuarios Activos', value: '1', icon: Users, trend: 'Admin', color: 'text-purple-600', bg: 'bg-purple-50' },
-    { title: 'Alertas', value: '0', icon: AlertCircle, trend: 'Sin riesgo', color: 'text-amber-600', bg: 'bg-amber-50' },
+    { title: 'Vencimientos', value: ((alertas?.vencidos?.length || 0) + (alertas?.vencimientos?.length || 0)).toString(), icon: AlertCircle, trend: 'Revisión', color: 'text-amber-600', bg: 'bg-amber-50' },
   ]
 
   return (
@@ -54,31 +72,72 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      <div className="grid gap-8 md:grid-cols-2">
-        <Card className="border-none bg-white shadow-2xl shadow-slate-200/60 rounded-[2.5rem] overflow-hidden">
+      <div className="grid gap-8 lg:grid-cols-3">
+        <Card className="lg:col-span-2 border-none bg-white shadow-2xl shadow-slate-200/60 rounded-[2.5rem] overflow-hidden">
           <CardHeader className="p-8 bg-slate-50/50 border-b border-slate-100">
-            <CardTitle className="text-slate-900 text-xl font-black uppercase tracking-wider">Actividad Reciente</CardTitle>
+            <CardTitle className="text-slate-900 text-xl font-black uppercase tracking-wider">Ingresos vs Gastos (Últimos 7 días)</CardTitle>
           </CardHeader>
           <CardContent className="p-10">
-            <div className="flex h-[250px] flex-col items-center justify-center text-slate-300 border-4 border-dashed border-slate-50 rounded-[2rem] gap-4">
-               <div className="bg-slate-50 p-4 rounded-full">
-                  <TrendingUp className="h-10 w-10 text-slate-200" />
-               </div>
-               <p className="font-bold text-slate-400">No hay actividad registrada hoy</p>
-            </div>
+            {datosGrafico.length > 0 ? (
+              <IngresosGastosChart data={datosGrafico} />
+            ) : (
+              <div className="flex h-[250px] flex-col items-center justify-center text-slate-300 border-4 border-dashed border-slate-50 rounded-[2rem] gap-4">
+                 <p className="font-bold text-slate-400">No hay datos suficientes</p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
         <Card className="border-none bg-white shadow-2xl shadow-slate-200/60 rounded-[2.5rem] overflow-hidden">
           <CardHeader className="p-8 bg-slate-50/50 border-b border-slate-100">
-            <CardTitle className="text-slate-900 text-xl font-black uppercase tracking-wider">Próximos Turnos</CardTitle>
+            <CardTitle className="text-slate-900 text-xl font-black uppercase tracking-wider">Alertas Críticas</CardTitle>
           </CardHeader>
-          <CardContent className="p-10">
-            <div className="flex h-[250px] flex-col items-center justify-center text-slate-300 border-4 border-dashed border-slate-50 rounded-[2rem] gap-4">
-               <div className="bg-slate-50 p-4 rounded-full">
-                  <Users className="h-10 w-10 text-slate-200" />
-               </div>
-               <p className="font-bold text-slate-400">No hay turnos asignados</p>
+          <CardContent className="p-0 overflow-y-auto max-h-[350px]">
+            <div className="flex flex-col divide-y divide-slate-100">
+              {alertas?.vencidos?.map((item: any) => (
+                <div key={item.id} className="p-6 flex items-start gap-4 hover:bg-slate-50">
+                  <div className="bg-rose-100 p-2 rounded-full shrink-0">
+                    <AlertTriangle className="h-5 w-5 text-rose-600" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-slate-900">{item.nombre_producto}</p>
+                    <p className="text-sm text-rose-600 font-medium">Vencido el {item.fecha_vencimiento}</p>
+                  </div>
+                </div>
+              ))}
+              
+              {alertas?.vencimientos?.map((item: any) => (
+                <div key={item.id} className="p-6 flex items-start gap-4 hover:bg-slate-50">
+                  <div className="bg-amber-100 p-2 rounded-full shrink-0">
+                    <Clock className="h-5 w-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-slate-900">{item.nombre_producto}</p>
+                    <p className="text-sm text-amber-600 font-medium">Vence pronto ({item.fecha_vencimiento})</p>
+                  </div>
+                </div>
+              ))}
+
+              {alertas?.stockBajo?.map((item: any) => (
+                <div key={item.id} className="p-6 flex items-start gap-4 hover:bg-slate-50">
+                  <div className="bg-blue-100 p-2 rounded-full shrink-0">
+                    <Package className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-slate-900">{item.nombre_producto}</p>
+                    <p className="text-sm text-blue-600 font-medium">Stock bajo: quedan {item.cajas} cajas</p>
+                  </div>
+                </div>
+              ))}
+
+              {totalCriticos === 0 && (!alertas?.vencimientos || alertas?.vencimientos.length === 0) && (
+                <div className="p-10 flex flex-col items-center justify-center text-slate-400">
+                  <div className="bg-emerald-50 p-4 rounded-full mb-3">
+                    <AlertCircle className="h-8 w-8 text-emerald-500" />
+                  </div>
+                  <p className="font-bold text-center">Todo está en orden</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

@@ -627,18 +627,36 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
 
                    <div className={`grid grid-cols-1 md:grid-cols-${esProductoUnico ? '1' : '3'} gap-6`}>
                       {[ 
-                        {l: esProductoUnico ? 'PVP Final' : 'PVP Caja', v:formData.precio_caja, m:formData.porcentaje_ganancia}, 
+                        {l: esProductoUnico ? 'PVP Final' : 'PVP Caja', v:formData.precio_caja, m:formData.porcentaje_ganancia, mk: 'porcentaje_ganancia'}, 
                         ...(!esProductoUnico ? [
-                          {l:'PVP Blíster', v:formData.precio_blister, m:formData.margen_blister}, 
-                          {l:'PVP Unidad', v:formData.precio_unidad, m:formData.margen_unidad} 
+                          {l:'PVP Blíster', v:formData.precio_blister, m:formData.margen_blister, mk: 'margen_blister'}, 
+                          {l:'PVP Unidad', v:formData.precio_unidad, m:formData.margen_unidad, mk: 'margen_unidad'} 
                         ] : [])
                       ].map((x, i) => (
                         <div key={i} className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm space-y-1">
-                           <span className="text-xs font-semibold text-slate-500 uppercase block">{x.l}</span>
-                           <span className="text-lg font-bold text-slate-800 block">
-                             ${calculatePV(x.v, x.m).toLocaleString()}
-                           </span>
-                           <span className="text-[10px] font-medium text-slate-400 block">Margen: {x.m}%</span>
+                           <span className="text-xs font-semibold text-slate-500 uppercase block mb-1">{x.l}</span>
+                           <div className="relative">
+                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">$</span>
+                             <input 
+                               type="number"
+                               step="0.01"
+                               className="w-full pl-7 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-lg font-bold text-slate-800 focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all"
+                               value={Number(calculatePV(x.v, x.m).toFixed(2))}
+                               onChange={(e) => {
+                                 const val = e.target.value;
+                                 const pvp = parseFloat(val);
+                                 if (isNaN(pvp) && val !== '') return;
+                                 let newMargin = 0;
+                                 if (val === '') {
+                                   newMargin = -100; // sets PVP to 0 if cleared
+                                 } else if (x.v > 0) {
+                                   newMargin = ((pvp / x.v) - 1) * 100;
+                                 }
+                                 setFormData(p => ({...p, [x.mk]: Number(newMargin.toFixed(2))}));
+                               }}
+                             />
+                           </div>
+                           <span className="text-[10px] font-medium text-slate-400 block mt-1">Margen: {x.m}%</span>
                         </div>
                       ))}
                    </div>

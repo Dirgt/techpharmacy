@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { abrirCaja, cerrarCaja } from '@/app/actions/caja'
 import { GastoModal } from '@/components/tesoreria/gasto-modal'
+import { useBarcodeScanner } from '@/hooks/use-barcode-scanner'
 
 export function FacturacionClient({ 
   inventarioInitial, 
@@ -80,6 +81,20 @@ export function FacturacionClient({
     }
     fetchNextFacturaNum()
   }, [])
+
+  useBarcodeScanner((barcode) => {
+    // Only process if we are in POS tab and not currently interacting with an input
+    if (activeTab !== 'pos') return
+    
+    // Check if the barcode matches any product in inventarioInitial (using codigo_producto)
+    const product = inventarioInitial.find(p => p.codigo_producto === barcode)
+    
+    if (product) {
+      addToCart(product)
+    } else {
+      toast.error(`Producto no encontrado (Código: ${barcode})`)
+    }
+  })
 
   const ventasCreditoPendientes = useMemo(() => 
     ventasHoy.filter(f => f.tipo_venta === 'credito' && f.estado_pago === 'pendiente')

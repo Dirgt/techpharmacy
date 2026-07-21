@@ -1,9 +1,19 @@
 'use client'
 
 import { useMemo } from 'react'
-import { DollarSign, Receipt, TrendingDown, TrendingUp, Wallet, Activity, ArrowDownRight, ArrowUpRight } from 'lucide-react'
+import { DollarSign, Receipt, TrendingDown, TrendingUp, Wallet, Activity, ArrowDownRight, ArrowUpRight, BarChart3, PieChart } from 'lucide-react'
+import { IngresosGastosChart } from '@/components/reportes/ingresos-gastos-chart'
+import { TopProductosChart } from '@/components/reportes/top-productos-chart'
 
-export default function ReportesClient({ reporte }: { reporte: { facturas: any[], compras: any[], gastos: any[] } }) {
+export default function ReportesClient({ 
+  reporte, 
+  chartData, 
+  topData 
+}: { 
+  reporte: { facturas: any[], compras: any[], gastos: any[] },
+  chartData: any[],
+  topData: any[]
+}) {
   const { facturas, compras, gastos } = reporte
 
   const finanzas = useMemo(() => {
@@ -167,6 +177,47 @@ export default function ReportesClient({ reporte }: { reporte: { facturas: any[]
               <span className="font-black uppercase text-xs tracking-widest">Total Egresos</span>
               <span className="font-black text-xl">${finanzas.totalEgresos.toLocaleString()}</span>
             </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* ── GRÁFICOS Y ANALÍTICAS ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
+        
+        {/* Ingresos vs Gastos Mensual */}
+        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
+          <h2 className="text-lg font-black text-slate-900 mb-2 flex items-center">
+            <BarChart3 className="w-5 h-5 text-indigo-500 mr-2" />
+            Ingresos vs Gastos
+          </h2>
+          <p className="text-sm text-slate-500 font-medium mb-6">Comparativa de los últimos 7 días</p>
+          <div className="h-[350px]">
+            {chartData && chartData.length > 0 ? (
+              <IngresosGastosChart data={chartData} />
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center text-slate-300 border-2 border-dashed border-slate-50 rounded-2xl">
+                <p className="font-bold">No hay datos suficientes</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Top 10 Productos Más Vendidos */}
+        <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-8">
+          <h2 className="text-lg font-black text-slate-900 mb-2 flex items-center">
+            <PieChart className="w-5 h-5 text-purple-500 mr-2" />
+            Top 10 Más Vendidos
+          </h2>
+          <p className="text-sm text-slate-500 font-medium mb-6">Medicamentos con mayor rotación en el mes</p>
+          <div className="h-[350px]">
+            {topData && topData.length > 0 ? (
+              <TopProductosChart data={topData} />
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center text-slate-300 border-2 border-dashed border-slate-50 rounded-2xl">
+                <p className="font-bold">No hay ventas registradas</p>
+              </div>
+            )}
           </div>
         </div>
 

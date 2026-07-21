@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
+import { useBarcodeScanner } from '@/hooks/use-barcode-scanner'
 import { Plus, Search, FileText, Calendar, PlusCircle, Trash2, ShoppingCart, AlertCircle } from 'lucide-react'
 import { registrarCompra } from '@/app/actions/tesoreria'
 import {
@@ -56,6 +57,27 @@ export default function ComprasClient({
     c.numero_factura.toLowerCase().includes(searchTerm.toLowerCase()) || 
     c.proveedores?.nombre.toLowerCase().includes(searchTerm.toLowerCase())
   )
+
+  useBarcodeScanner((barcode) => {
+    if (!isModalOpen) return
+    const producto = productos.find(p => p.codigo === barcode)
+    if (producto) {
+      setDetalles(prev => {
+        // If product already exists in details, increase quantity
+        const existingIndex = prev.findIndex(d => d.producto_id === producto.id)
+        if (existingIndex >= 0) {
+          const newDetalles = [...prev]
+          newDetalles[existingIndex].cantidad += 1
+          toast.success(`Cantidad aumentada: ${producto.nombre}`)
+          return newDetalles
+        }
+        toast.success(`Producto escaneado: ${producto.nombre}`)
+        return [...prev, { producto_id: producto.id, cantidad: 1, costo_unitario: 0 }]
+      })
+    } else {
+      toast.error(`Producto no encontrado con código: ${barcode}`)
+    }
+  })
 
   const handleAddDetalle = () => {
     setDetalles([...detalles, { producto_id: '', cantidad: 1, costo_unitario: 0 }])
