@@ -336,7 +336,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
     <div className="animate-in fade-in duration-1000 space-y-10 pb-20">
       {/* SEMÁFORO DE SALUD Y BI (Cards) */}
       {/* SEMÁFORO DE SALUD Y BI (Cards) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4 lg:gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 gap-4 lg:gap-6">
         {[
           { label: 'VALOR DEL STOCK', val: `$${stats.inventoryValue.toLocaleString()}`, icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-50', filter: 'todos', sub: 'Capital Activo' },
           { label: 'MARGEN ESPERADO', val: `$${stats.estimatedProfit.toLocaleString()}`, icon: Gem, color: 'text-emerald-600', bg: 'bg-emerald-50', filter: 'todos', sub: 'Ganancia Proyectada' },
@@ -347,7 +347,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
           <button 
             key={i} 
             onClick={() => setFilterType(item.filter)}
-            className={`text-left p-5 lg:p-6 rounded-[2rem] lg:rounded-[2.5rem] border transition-all relative group h-full flex flex-col justify-between overflow-hidden ${filterType === item.filter && item.filter !== 'todos' ? 'border-indigo-500 ring-[8px] ring-indigo-500/5 bg-white shadow-xl' : 'bg-white border-slate-100 hover:shadow-xl hover:-translate-y-1'}`}
+            className={`text-left p-5 lg:p-6 rounded-[2rem] lg:rounded-[2.5rem] border transition-all relative group h-full flex flex-col justify-between ${filterType === item.filter && item.filter !== 'todos' ? 'border-indigo-500 ring-[8px] ring-indigo-500/5 bg-white shadow-xl' : 'bg-white border-slate-100 hover:shadow-xl hover:-translate-y-1'}`}
           >
             <div className="flex flex-col items-start gap-4 mb-6 w-full">
               <div className="flex items-center gap-3 w-full">
@@ -357,11 +357,11 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                 <p className="text-slate-500 text-[10px] lg:text-[11px] font-bold uppercase tracking-wider leading-tight flex-1 break-words">{item.label}</p>
               </div>
               <div className="w-full">
-                <h3 className="text-2xl lg:text-3xl font-black text-slate-900 tracking-tighter truncate" title={item.val.toString()}>{item.val}</h3>
+                <h3 className="text-2xl lg:text-3xl font-black text-slate-900 tracking-tighter break-words" title={item.val.toString()}>{item.val}</h3>
               </div>
             </div>
             <div className="flex items-center justify-between w-full mt-auto gap-2">
-               <span className="text-[9px] lg:text-[10px] font-bold text-slate-400 uppercase bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 truncate flex-1">{item.sub}</span>
+               <span className="text-[9px] lg:text-[10px] font-bold text-slate-400 uppercase bg-slate-50 px-3 py-2 rounded-lg border border-slate-100 flex-1 whitespace-normal text-left leading-tight break-words">{item.sub}</span>
                <div className={`w-2 h-2 shrink-0 rounded-full ${item.color.replace('text', 'bg')} animate-pulse`} />
             </div>
           </button>
