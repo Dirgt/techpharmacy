@@ -62,6 +62,61 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
     stock_minimo: 2
   })
 
+  // --- COMPONENTE PVP MANUAL ---
+  const PVPInput = ({ label, cost, margin, marginKey, setFormData, calculatePV }: any) => {
+    const [localVal, setLocalVal] = useState<string>('');
+    const [isFocused, setIsFocused] = useState(false);
+
+    useEffect(() => {
+      if (!isFocused) {
+        setLocalVal(Number(calculatePV(cost, margin).toFixed(2)).toString());
+      }
+    }, [cost, margin, isFocused, calculatePV]);
+
+    const handleChange = (e: any) => {
+      const val = e.target.value;
+      setLocalVal(val);
+      
+      const pvp = parseFloat(val);
+      if (val === '') {
+        setFormData((p: any) => ({...p, [marginKey]: 0}));
+        return;
+      }
+      if (isNaN(pvp) || pvp < 0) return;
+      
+      if (cost > 0) {
+        if (pvp === 0) {
+           setFormData((p: any) => ({...p, [marginKey]: 0}));
+        } else {
+           const newMargin = (1 - (cost / pvp)) * 100;
+           setFormData((p: any) => ({...p, [marginKey]: Number(newMargin.toFixed(2))}));
+        }
+      }
+    };
+
+    return (
+      <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm space-y-1">
+         <span className="text-xs font-semibold text-slate-500 uppercase block mb-1">{label}</span>
+         <div className="relative">
+           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">$</span>
+           <input 
+             type="number"
+             step="0.01"
+             min="0"
+             disabled={cost <= 0}
+             title={cost <= 0 ? "Ingresa el Costo primero" : ""}
+             className="w-full pl-7 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-lg font-bold text-slate-800 focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+             value={localVal}
+             onChange={handleChange}
+             onFocus={() => setIsFocused(true)}
+             onBlur={() => { setIsFocused(false); setLocalVal(Number(calculatePV(cost, margin).toFixed(2)).toString()); }}
+           />
+         </div>
+         <span className="text-[10px] font-medium text-slate-400 block mt-1">Margen: {margin}%</span>
+      </div>
+    );
+  }
+
   // --- SECCIONES DE FARMACIA ---
   const SECCIONES = [
     'Analgésicos', 'Antibióticos', 'Éticos', 'Genéricos', 'Óvulos', 'Cremas', 
@@ -633,31 +688,15 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                           {l:'PVP Unidad', v:formData.precio_unidad, m:formData.margen_unidad, mk: 'margen_unidad'} 
                         ] : [])
                       ].map((x, i) => (
-                        <div key={i} className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm space-y-1">
-                           <span className="text-xs font-semibold text-slate-500 uppercase block mb-1">{x.l}</span>
-                           <div className="relative">
-                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">$</span>
-                             <input 
-                               type="number"
-                               step="0.01"
-                               className="w-full pl-7 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-lg font-bold text-slate-800 focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all"
-                               value={Number(calculatePV(x.v, x.m).toFixed(2))}
-                               onChange={(e) => {
-                                 const val = e.target.value;
-                                 const pvp = parseFloat(val);
-                                 if (isNaN(pvp) && val !== '') return;
-                                 let newMargin = 0;
-                                 if (val === '') {
-                                   newMargin = -100; // sets PVP to 0 if cleared
-                                 } else if (x.v > 0) {
-                                   newMargin = ((pvp / x.v) - 1) * 100;
-                                 }
-                                 setFormData(p => ({...p, [x.mk]: Number(newMargin.toFixed(2))}));
-                               }}
-                             />
-                           </div>
-                           <span className="text-[10px] font-medium text-slate-400 block mt-1">Margen: {x.m}%</span>
-                        </div>
+                        <PVPInput 
+                          key={i} 
+                          label={x.l} 
+                          cost={x.v} 
+                          margin={x.m} 
+                          marginKey={x.mk} 
+                          setFormData={setFormData} 
+                          calculatePV={calculatePV} 
+                        />
                       ))}
                    </div>
 
