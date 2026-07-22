@@ -25,12 +25,21 @@ interface InventarioClientProps {
 
 // --- COMPONENTE NUMERICO MEJORADO ---
 const NumericInput = ({ label, value, onChange, min, step, required, className, inputClass, children }: any) => {
-  const [localVal, setLocalVal] = useState<string>(value?.toString() || '');
+  // Format function to show up to 2 decimal places gracefully
+  const formatDisplay = (val: any) => {
+    if (val === null || val === undefined) return '';
+    if (typeof val === 'number' && !Number.isInteger(val)) {
+      return parseFloat(val.toFixed(2)).toString();
+    }
+    return val.toString();
+  };
+
+  const [localVal, setLocalVal] = useState<string>(formatDisplay(value));
   const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
     if (!isFocused) {
-      setLocalVal(value?.toString() || '');
+      setLocalVal(formatDisplay(value));
     }
   }, [value, isFocused]);
 
@@ -128,7 +137,7 @@ const PVPInput = ({ label, cost, margin, marginKey, setFormData, calculatePV }: 
          />
        </div>
        <div className="flex-1 text-center">
-        <span className="text-[10px] font-semibold text-slate-400">Margen: {Number(margin || 0)}%</span>
+        <span className="text-[10px] font-semibold text-slate-400">Margen: {typeof margin === 'number' && !Number.isInteger(margin) ? parseFloat(margin.toFixed(2)) : (margin || 0)}%</span>
       </div>
     </div>
   );
