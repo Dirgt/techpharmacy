@@ -117,6 +117,8 @@ export async function upsertInventario(rawData: UpsertInventarioInput) {
   const { data: upserted, error } = await supabase.rpc('upsert_inventario_tx', {
     p_blisters: data.blisters,
     p_cajas: data.cajas,
+    p_blisters_por_caja: data.blisters_por_caja,
+    p_unidades_por_blister: data.unidades_por_blister,
     p_codigo: data.codigo,
     p_fecha_vencimiento: data.fecha_vencimiento || null as unknown as string, // Cast required if nullable for dates in rpc if empty
     p_inventario_id: data.id || undefined,

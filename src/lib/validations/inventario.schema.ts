@@ -13,6 +13,9 @@ export const UpsertInventarioSchema = z.object({
   blisters: z.number().min(0).default(0),
   unidades: z.number().min(0).default(0),
   
+  blisters_por_caja: z.number().min(0).default(1),
+  unidades_por_blister: z.number().min(0).default(1),
+  
   precio_caja: z.number().min(0).default(0),
   precio_blister: z.number().min(0).default(0),
   precio_unidad: z.number().min(0).default(0),
