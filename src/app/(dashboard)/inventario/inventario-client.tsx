@@ -375,13 +375,15 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       const result = await createLaboratorio(newLabName)
       if (result.success) {
         const lab = result.data
-        if (!localLabs.find(l => l.id === lab.id)) {
-          setLocalLabs([...localLabs, lab])
+        if (lab && lab.id) {
+          if (!localLabs.find(l => l.id === lab.id)) {
+            setLocalLabs([...localLabs, lab])
+          }
+          setFormData({ ...formData, laboratorio_id: lab.id })
+          setIsAddingLab(false)
+          setNewLabName('')
+          toast.success('Laboratorio seleccionado/creado')
         }
-        setFormData({ ...formData, laboratorio_id: lab.id })
-        setIsAddingLab(false)
-        setNewLabName('')
-        toast.success('Laboratorio seleccionado/creado')
       } else {
         toast.error(result.error || 'Error al crear laboratorio')
       }
