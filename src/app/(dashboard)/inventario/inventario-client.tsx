@@ -103,7 +103,8 @@ const PVPInput = ({ label, cost, margin, marginKey, setFormData, calculatePV }: 
          setFormData((p: any) => ({...p, [marginKey]: 0}));
       } else {
          const newMargin = (1 - (cost / pvp)) * 100;
-         setFormData((p: any) => ({...p, [marginKey]: Number(newMargin.toFixed(2))}));
+         // Guardamos el margen con toda su precisión matemática para que el cálculo reversible dé exactamente el PVP ingresado.
+         setFormData((p: any) => ({...p, [marginKey]: newMargin}));
       }
     }
   };
@@ -123,10 +124,12 @@ const PVPInput = ({ label, cost, margin, marginKey, setFormData, calculatePV }: 
            value={localVal}
            onChange={handleChange}
            onFocus={() => setIsFocused(true)}
-           onBlur={() => { setIsFocused(false); setLocalVal(Number(calculatePV(cost, margin).toFixed(2)).toString()); }}
+           onBlur={() => { setIsFocused(false); setLocalVal(Number(calculatePV(cost, margin)).toString()); }}
          />
        </div>
-       <span className="text-[10px] font-medium text-slate-400 block mt-1">Margen: {margin}%</span>
+       <div className="flex-1 text-center">
+        <span className="text-[10px] font-semibold text-slate-400">Margen: {Number(margin || 0)}%</span>
+      </div>
     </div>
   );
 }
@@ -388,7 +391,6 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
   return (
     <div className="animate-in fade-in duration-1000 space-y-10 pb-20">
       {/* SEMÁFORO DE SALUD Y BI (Cards) */}
-      {/* SEMÁFORO DE SALUD Y BI (Cards) */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 gap-4 lg:gap-6">
         {[
           { label: 'VALOR DEL STOCK', val: `$${stats.inventoryValue.toLocaleString()}`, icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-50', filter: 'todos', sub: 'Capital Activo' },
@@ -494,7 +496,6 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                              <span className="text-sm font-black text-slate-900 uppercase truncate max-w-[200px] leading-tight group-hover:text-indigo-600" title={item.nombre_producto || undefined}>{item.nombre_producto}</span>
                              <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">{item.codigo}</span>
                           </div>
-                             <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">{item.codigo}</span>
                           </div>
                           <div className="flex items-center gap-2 mt-1">
                              <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100">{item.laboratorio || 'S.L'}</span>
@@ -552,7 +553,6 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       </div>
 
       {/* TERMINAL DE ABASTECIMIENTO ROBUSTA (Sidebar XXL) */}
-      {/* TERMINAL DE ABASTECIMIENTO ROBUSTA (Sidebar) */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-end bg-slate-900/60 backdrop-blur-sm p-4 sm:p-6 animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-3xl h-[calc(100vh-2rem)] sm:h-[calc(100vh-3rem)] rounded-2xl shadow-2xl flex flex-col animate-in slide-in-from-right duration-500 overflow-hidden relative border border-slate-200">
@@ -692,13 +692,13 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <NumericInput 
                           label="Blísters por Caja" 
-                          min={1} 
+                          min={0} 
                           value={formData.blisters_por_caja} 
                           onChange={(v: number) => setFormData({...formData, blisters_por_caja: v})} 
                         />
                         <NumericInput 
                           label="Unidades por Blíster" 
-                          min={1} 
+                          min={0} 
                           value={formData.unidades_por_blister} 
                           onChange={(v: number) => setFormData({...formData, unidades_por_blister: v})} 
                         />
@@ -717,6 +717,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                           key={i} 
                           label={x.l} 
                           value={(formData as any)[x.k]} 
+                          min={0}
                           onChange={(v: number) => setFormData({...formData, [x.k]: v})} 
                         />
                       ))}
@@ -777,13 +778,15 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                           {l:'Margen Unidad %', k:'margen_unidad'} 
                         ] : [])
                       ].map((x, i) => (
-                        <div key={i} className="space-y-2">
-                           <label className="text-xs font-semibold text-slate-600 uppercase block">{x.l}</label>
-                           <div className="flex items-center gap-2">
-                              <button type="button" onClick={() => setFormData(p=>({...p, [x.k]: Math.max(0, (p as any)[x.k] - 5)}))} className="w-8 h-8 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-md flex items-center justify-center font-bold transition-colors">-</button>
-                              <span className="flex-1 text-center font-semibold text-slate-800">{(formData as any)[x.k]}%</span>
-                              <button type="button" onClick={() => setFormData(p=>({...p, [x.k]: (p as any)[x.k] + 5}))} className="w-8 h-8 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-md flex items-center justify-center font-bold transition-colors">+</button>
-                           </div>
+                        <div key={i} className="flex items-center gap-3 bg-white p-3 rounded-lg border border-slate-200">
+                           <button type="button" onClick={() => setFormData({...formData, [x.k]: (Number(formData[x.k as keyof typeof formData] || 0) - 1)})} className="w-8 h-8 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold transition-colors">-</button>
+                           <NumericInput 
+                             value={Number(formData[x.k as keyof typeof formData] || 0)} 
+                             step="0.01"
+                             onChange={(v: number) => setFormData({...formData, [x.k]: v})} 
+                             inputClass="w-full text-center border-none focus:ring-0 text-sm font-bold text-slate-700 bg-transparent"
+                           />
+                           <button type="button" onClick={() => setFormData({...formData, [x.k]: (Number(formData[x.k as keyof typeof formData] || 0) + 1)})} className="w-8 h-8 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold transition-colors">+</button>
                         </div>
                       ))}
                    </div>
