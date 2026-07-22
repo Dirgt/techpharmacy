@@ -56,6 +56,7 @@ export function FacturacionClient({
   const [subTabVentas, setSubTabVentas] = useState<'historial' | 'cartera'>('historial')
   const [expandedFacturaId, setExpandedFacturaId] = useState<string | null>(null)
   const [nextFacturaNum, setNextFacturaNum] = useState<number | null>(null)
+  const [filterMethod, setFilterMethod] = useState<'todos' | 'efectivo' | 'tarjeta' | 'transferencia'>('todos')
 
   const [showCloseCajaModal, setShowCloseCajaModal] = useState(false)
   const [isClosingCaja, setIsClosingCaja] = useState(false)
@@ -96,9 +97,14 @@ export function FacturacionClient({
     }
   })
 
+  const ventasFiltradas = useMemo(() => {
+    if (filterMethod === 'todos') return ventasHoy
+    return ventasHoy.filter(v => v.metodo_pago === filterMethod)
+  }, [ventasHoy, filterMethod])
+
   const ventasCreditoPendientes = useMemo(() => 
-    ventasHoy.filter(f => f.tipo_venta === 'credito' && f.estado_pago === 'pendiente')
-  , [ventasHoy])
+    ventasFiltradas.filter(f => f.tipo_venta === 'credito' && f.estado_pago === 'pendiente')
+  , [ventasFiltradas])
 
   // --- DERIVED STATE ---
   const searchResults = useMemo(() => {
@@ -858,11 +864,46 @@ export function FacturacionClient({
             </div>
             <div className="bg-slate-900 rounded-2xl p-5 text-white flex flex-col gap-2">
               <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Por Método</p>
-              <div className="flex justify-between text-sm"><span className="text-slate-400">Efectivo</span><span className="font-black">${kpisVentas.efectivo.toLocaleString()}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-slate-400">Tarjeta</span><span className="font-black">${kpisVentas.tarjeta.toLocaleString()}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-slate-400">Transf.</span><span className="font-black">${kpisVentas.transferencia.toLocaleString()}</span></div>
+              <button 
+                onClick={() => setFilterMethod(filterMethod === 'efectivo' ? 'todos' : 'efectivo')}
+                className={`flex justify-between items-center text-sm p-1.5 rounded-lg transition-all ${filterMethod === 'efectivo' ? 'bg-indigo-500 text-white' : 'hover:bg-slate-800'}`}
+              >
+                <span className={filterMethod === 'efectivo' ? 'text-indigo-100 font-bold' : 'text-slate-400'}>Efectivo</span>
+                <span className="font-black">${kpisVentas.efectivo.toLocaleString()}</span>
+              </button>
+              <button 
+                onClick={() => setFilterMethod(filterMethod === 'tarjeta' ? 'todos' : 'tarjeta')}
+                className={`flex justify-between items-center text-sm p-1.5 rounded-lg transition-all ${filterMethod === 'tarjeta' ? 'bg-indigo-500 text-white' : 'hover:bg-slate-800'}`}
+              >
+                <span className={filterMethod === 'tarjeta' ? 'text-indigo-100 font-bold' : 'text-slate-400'}>Tarjeta</span>
+                <span className="font-black">${kpisVentas.tarjeta.toLocaleString()}</span>
+              </button>
+              <button 
+                onClick={() => setFilterMethod(filterMethod === 'transferencia' ? 'todos' : 'transferencia')}
+                className={`flex justify-between items-center text-sm p-1.5 rounded-lg transition-all ${filterMethod === 'transferencia' ? 'bg-indigo-500 text-white' : 'hover:bg-slate-800'}`}
+              >
+                <span className={filterMethod === 'transferencia' ? 'text-indigo-100 font-bold' : 'text-slate-400'}>Transf.</span>
+                <span className="font-black">${kpisVentas.transferencia.toLocaleString()}</span>
+              </button>
             </div>
           </div>
+
+          {filterMethod !== 'todos' && (
+            <div className="flex items-center justify-between bg-indigo-50 border border-indigo-100 px-6 py-3 rounded-2xl animate-in fade-in duration-200">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-indigo-600 animate-ping" />
+                <p className="text-xs font-bold text-indigo-900">
+                  Filtro activo: <span className="uppercase font-black text-indigo-700">{filterMethod}</span> ({ventasFiltradas.length} resultados)
+                </p>
+              </div>
+              <button 
+                onClick={() => setFilterMethod('todos')}
+                className="text-xs font-black text-indigo-600 hover:text-indigo-800 bg-white px-3 py-1.5 rounded-xl border border-indigo-200 shadow-sm transition-all active:scale-95"
+              >
+                Quitar Filtro ✕
+              </button>
+            </div>
+          )}
 
           {/* Top Productos Summary */}
           {topProductos.length > 0 && (
@@ -919,9 +960,9 @@ export function FacturacionClient({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {ventasHoy.length === 0 ? (
+                      {ventasFiltradas.length === 0 ? (
                         <tr><td colSpan={7} className="py-20 text-center text-slate-300 font-black">No hay ventas registradas</td></tr>
-                      ) : ventasHoy.map(f => (
+                      ) : ventasFiltradas.map(f => (
                         <React.Fragment key={f.id}>
                           <tr className={`hover:bg-slate-50/50 transition-colors cursor-pointer ${expandedFacturaId === f.id ? 'bg-slate-50' : ''}`}
                             onClick={() => setExpandedFacturaId(expandedFacturaId === f.id ? null : f.id)}>

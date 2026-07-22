@@ -230,10 +230,10 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
 
   const filteredData = useMemo(() => {
     let result = data.filter(item => 
-      item.nombre_producto?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.codigo?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.laboratorio?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.seccion?.toLowerCase().includes(searchTerm.toLowerCase())
+      (item.nombre_producto || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (item.codigo || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (item.laboratorio || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (item.seccion || '').toLowerCase().includes(searchTerm.toLowerCase())
     )
     if (filterType === 'stock_bajo') result = result.filter(item => (item.cajas || 0) <= (item.stock_minimo || 2))
     if (filterType === 'vencimiento') result = result.filter(item => item.fecha_vencimiento && isBefore(parseISO(item.fecha_vencimiento), addDays(new Date(), 90)))
@@ -441,7 +441,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       )}
 
       {/* BARRA DE ACCIÓN SUPREMA */}
-      <div className="bg-white/90 backdrop-blur-3xl p-4 lg:p-6 rounded-[3rem] lg:rounded-[4rem] border border-slate-100 shadow-xl flex flex-col xl:flex-row gap-4 lg:gap-6 items-center relative z-10">
+      <div className="sticky top-0 z-50 bg-white/90 backdrop-blur-3xl p-4 lg:p-6 rounded-[2rem] lg:rounded-[3rem] border border-slate-100 shadow-xl flex flex-col xl:flex-row gap-4 lg:gap-6 items-center">
         <div className="relative flex-1 group w-full">
           <Search className="absolute left-6 lg:left-8 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 w-5 h-5 lg:w-6 lg:h-6 transition-colors" />
           <input 

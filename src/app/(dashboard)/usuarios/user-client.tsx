@@ -140,97 +140,121 @@ export function UserClient({ initialUsers }: UserClientProps) {
               Nuevo Usuario
             </Button>
           </DialogTrigger>
-          <DialogContent className="bg-white border-slate-100 text-slate-900 sm:max-w-xl md:max-w-2xl rounded-3xl p-6 sm:p-8 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader className="border-b border-slate-100 pb-5">
-              <div className="flex items-center gap-3">
-                <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-100 text-emerald-600">
-                  <UserPlus className="w-6 h-6" />
-                </div>
-                <div>
-                  <DialogTitle className="text-2xl font-black tracking-tight text-slate-900">Registrar Empleado</DialogTitle>
-                  <DialogDescription className="text-slate-500 font-medium text-xs pt-1">
-                    Gestión de credenciales y asignación de perfil corporativo.
+          <DialogContent className="bg-white border-0 text-slate-900 sm:max-w-xl md:max-w-3xl rounded-[2rem] p-0 shadow-2xl overflow-hidden">
+            <div className="flex flex-col md:flex-row h-full">
+              {/* Sidebar Header */}
+              <div className="bg-slate-900 p-8 md:w-1/3 flex flex-col justify-between relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-400 via-transparent to-transparent"></div>
+                <div className="relative z-10">
+                  <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center mb-6 border border-white/10 backdrop-blur-md">
+                    <UserPlus className="w-6 h-6 text-white" />
+                  </div>
+                  <DialogTitle className="text-2xl font-black tracking-tight text-white mb-2">Registrar Empleado</DialogTitle>
+                  <DialogDescription className="text-slate-400 font-medium text-sm leading-relaxed">
+                    Ingresa los datos corporativos para dar de alta a un nuevo miembro del equipo.
                   </DialogDescription>
                 </div>
+                <div className="mt-8 relative z-10 hidden md:block">
+                  <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold uppercase tracking-widest">
+                    <ShieldCheck className="w-4 h-4" />
+                    Acceso Seguro
+                  </div>
+                </div>
               </div>
-            </DialogHeader>
 
-            <form onSubmit={handleSubmit} className="space-y-6 pt-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                <div className="space-y-2">
-                  <Label className="font-bold text-xs uppercase tracking-wider text-slate-600 flex items-center gap-1.5 ml-1">
-                    <User className="w-3.5 h-3.5 text-emerald-600" /> Nombre Completo *
-                  </Label>
-                  <Input name="full_name" required className="bg-slate-50/70 border-slate-200 rounded-xl h-12 text-sm font-semibold focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600" placeholder="Ej. Juan Carlos Pérez" />
+              {/* Form Content */}
+              <div className="p-8 md:w-2/3 bg-white">
+
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="space-y-2 sm:col-span-2">
+                  <Label className="font-bold text-xs uppercase tracking-wider text-slate-500 ml-1">Nombre Completo</Label>
+                  <div className="relative group">
+                    <User className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2 group-focus-within:text-indigo-600 transition-colors" />
+                    <Input name="full_name" required className="pl-12 bg-slate-50/50 border-slate-200 rounded-2xl h-14 text-sm font-bold focus:bg-white focus:ring-[4px] focus:ring-indigo-600/10 focus:border-indigo-600 transition-all shadow-sm" placeholder="Ej. Juan Carlos Pérez" />
+                  </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="font-bold text-xs uppercase tracking-wider text-slate-600 flex items-center gap-1.5 ml-1">
-                    <UserCheck className="w-3.5 h-3.5 text-emerald-600" /> Nombre de Usuario *
-                  </Label>
-                  <Input name="username" required className="bg-slate-50/70 border-slate-200 rounded-xl h-12 text-sm font-semibold focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600" placeholder="Ej. jperez" />
+                  <Label className="font-bold text-xs uppercase tracking-wider text-slate-500 ml-1">Usuario de Sistema</Label>
+                  <div className="relative group">
+                    <UserCheck className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2 group-focus-within:text-indigo-600 transition-colors" />
+                    <Input name="username" required className="pl-12 bg-slate-50/50 border-slate-200 rounded-2xl h-14 text-sm font-bold focus:bg-white focus:ring-[4px] focus:ring-indigo-600/10 focus:border-indigo-600 transition-all shadow-sm" placeholder="Ej. jperez" />
+                  </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="font-bold text-xs uppercase tracking-wider text-slate-600 flex items-center gap-1.5 ml-1">
-                    <Mail className="w-3.5 h-3.5 text-emerald-600" /> Correo Electrónico *
-                  </Label>
-                  <Input name="email" type="email" required className="bg-slate-50/70 border-slate-200 rounded-xl h-12 text-sm font-semibold focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600" placeholder="juan.perez@farmacia.com" />
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="font-bold text-xs uppercase tracking-wider text-slate-600 flex items-center gap-1.5 ml-1">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Rol en Sistema *
-                  </Label>
+                  <Label className="font-bold text-xs uppercase tracking-wider text-slate-500 ml-1">Rol Operativo</Label>
                   <Select name="role" defaultValue="vendedor">
-                    <SelectTrigger className="bg-slate-50/70 border-slate-200 rounded-xl h-12 text-sm font-semibold focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600">
+                    <SelectTrigger className="bg-slate-50/50 border-slate-200 rounded-2xl h-14 text-sm font-bold focus:bg-white focus:ring-[4px] focus:ring-indigo-600/10 focus:border-indigo-600 transition-all shadow-sm px-4">
                       <SelectValue placeholder="Seleccionar rol" />
                     </SelectTrigger>
-                    <SelectContent className="bg-white border-slate-200 shadow-xl rounded-xl">
-                      <SelectItem value="admin" className="focus:bg-emerald-50 py-3 font-semibold">Administrador General</SelectItem>
-                      <SelectItem value="vendedor" className="focus:bg-emerald-50 py-3 font-semibold">Vendedor / Farmacéutico</SelectItem>
+                    <SelectContent className="bg-white border-slate-100 shadow-2xl rounded-2xl p-2">
+                      <SelectItem value="admin" className="focus:bg-indigo-50 focus:text-indigo-900 py-3 px-4 font-bold rounded-xl cursor-pointer">
+                        <div className="flex flex-col">
+                          <span>Administrador</span>
+                          <span className="text-[10px] font-medium text-slate-400">Acceso total al sistema</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="vendedor" className="focus:bg-indigo-50 focus:text-indigo-900 py-3 px-4 font-bold rounded-xl cursor-pointer">
+                        <div className="flex flex-col">
+                          <span>Vendedor / Farmacéutico</span>
+                          <span className="text-[10px] font-medium text-slate-400">Ventas, turnos e inventario</span>
+                        </div>
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
+                <div className="space-y-2 sm:col-span-2">
+                  <Label className="font-bold text-xs uppercase tracking-wider text-slate-500 ml-1">Correo Electrónico Corporativo</Label>
+                  <div className="relative group">
+                    <Mail className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2 group-focus-within:text-indigo-600 transition-colors" />
+                    <Input name="email" type="email" required className="pl-12 bg-slate-50/50 border-slate-200 rounded-2xl h-14 text-sm font-bold focus:bg-white focus:ring-[4px] focus:ring-indigo-600/10 focus:border-indigo-600 transition-all shadow-sm" placeholder="juan.perez@farmacia.com" />
+                  </div>
+                </div>
+
                 <div className="sm:col-span-2 space-y-2">
-                  <Label className="font-bold text-xs uppercase tracking-wider text-slate-600 flex items-center gap-1.5 ml-1">
-                    <KeyRound className="w-3.5 h-3.5 text-emerald-600" /> Contraseña de Acceso *
-                  </Label>
-                  <Input 
-                    name="password" 
-                    type="password" 
-                    required 
-                    className="bg-slate-50/70 border-slate-200 rounded-xl h-12 text-sm font-semibold focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600" 
-                    placeholder="Mínimo 6 caracteres"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
+                  <Label className="font-bold text-xs uppercase tracking-wider text-slate-500 ml-1">Contraseña de Acceso</Label>
+                  <div className="relative group">
+                    <KeyRound className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2 group-focus-within:text-indigo-600 transition-colors" />
+                    <Input 
+                      name="password" 
+                      type="password" 
+                      required 
+                      className="pl-12 bg-slate-50/50 border-slate-200 rounded-2xl h-14 text-sm font-bold focus:bg-white focus:ring-[4px] focus:ring-indigo-600/10 focus:border-indigo-600 transition-all shadow-sm" 
+                      placeholder="Mínimo 6 caracteres"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                  </div>
                   {password && (
-                    <div className="space-y-1.5 mt-2 px-1">
-                      <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                        <div 
-                          className={`h-full transition-all duration-500 ${getStrengthColor(strength)}`} 
-                          style={{ width: `${strength}%` }}
-                        />
+                    <div className="space-y-2 mt-4 px-2">
+                      <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden flex gap-1">
+                        <div className={`h-full flex-1 transition-all duration-500 ${strength >= 25 ? getStrengthColor(strength) : 'bg-transparent'}`} />
+                        <div className={`h-full flex-1 transition-all duration-500 ${strength >= 50 ? getStrengthColor(strength) : 'bg-transparent'}`} />
+                        <div className={`h-full flex-1 transition-all duration-500 ${strength >= 75 ? getStrengthColor(strength) : 'bg-transparent'}`} />
+                        <div className={`h-full flex-1 transition-all duration-500 ${strength >= 100 ? getStrengthColor(strength) : 'bg-transparent'}`} />
                       </div>
-                      <p className="text-[10px] text-slate-400 uppercase tracking-widest font-black">
-                        Nivel de Seguridad: <span className={strength > 50 ? 'text-emerald-600' : 'text-amber-500'}>{strength <= 50 ? 'Baja' : strength <= 75 ? 'Media' : 'Alta (Recomendada)'}</span>
+                      <p className="text-[10px] text-slate-400 uppercase tracking-widest font-black text-right">
+                        Seguridad: <span className={strength > 50 ? 'text-emerald-500' : 'text-amber-500'}>{strength <= 50 ? 'Baja' : strength <= 75 ? 'Media' : 'Alta (Recomendada)'}</span>
                       </p>
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
-                <Button type="button" variant="outline" className="rounded-xl h-12 px-6 font-bold text-slate-600 border-slate-200 hover:bg-slate-50" onClick={() => setIsCreateDialogOpen(false)}>
+              <div className="flex items-center justify-end gap-4 pt-6 border-t border-slate-100 mt-6">
+                <Button type="button" variant="outline" className="rounded-2xl h-14 px-8 font-bold text-slate-600 border-slate-200 hover:bg-slate-50 transition-colors" onClick={() => setIsCreateDialogOpen(false)}>
                   Cancelar
                 </Button>
-                <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl h-12 px-8 font-bold shadow-lg shadow-emerald-600/20 transition-all active:scale-95" disabled={loading}>
-                  {loading ? 'Creando Usuario...' : 'Guardar y Crear Cuenta'}
+                <Button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white rounded-2xl h-14 px-10 font-black shadow-xl shadow-slate-900/20 transition-all active:scale-95" disabled={loading}>
+                  {loading ? 'Procesando...' : 'Confirmar Registro'}
                 </Button>
               </div>
             </form>
+            </div>
+            </div>
           </DialogContent>
         </Dialog>
       </div>

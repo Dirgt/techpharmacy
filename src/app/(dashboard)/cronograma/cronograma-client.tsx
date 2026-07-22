@@ -404,11 +404,6 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
                       </SelectContent>
                     </Select>
                   </div>
-                  {(activeFilter || userFilter) && (
-                    <Button variant="ghost" onClick={() => { setActiveFilter(null); setUserFilter(null); }} className="text-red-500 font-bold gap-2 hover:bg-red-50 rounded-2xl h-12">
-                      <FilterX className="h-5 w-5" /> Limpiar
-                    </Button>
-                  )}
                 </div>
               </div>
 
@@ -422,7 +417,7 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
                       "flex items-center gap-3 px-8 py-8 rounded-[1.5rem] border-2 transition-all hover:scale-105",
                       type === 'Apertura' ? "bg-emerald-50 text-emerald-700" : 
                       type === 'Cierre' ? "bg-sky-50 text-sky-700" : "bg-violet-50 text-violet-700",
-                      activeFilter === type ? "border-slate-900 shadow-xl scale-105 opacity-100" : "border-transparent opacity-60"
+                      activeFilter === type ? "border-indigo-500 ring-[8px] ring-indigo-500/5 bg-white shadow-xl scale-105 opacity-100" : "border-transparent opacity-60 bg-white hover:bg-slate-50"
                     )}
                    >
                       <div className={cn("h-3 w-3 rounded-full shadow-sm", 
@@ -433,6 +428,23 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
                    </Button>
                  ))}
               </div>
+              
+              {(activeFilter || userFilter) && (
+                <div className="flex items-center justify-between bg-indigo-50 border border-indigo-100 px-6 py-3 mx-6 mt-6 mb-2 rounded-2xl animate-in fade-in duration-200">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-indigo-600 animate-ping" />
+                    <p className="text-xs font-bold text-indigo-900">
+                      Filtro activo: <span className="uppercase font-black text-indigo-700">{activeFilter || 'Usuario Seleccionado'}</span> ({filteredTurnos.length} resultados)
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => { setActiveFilter(null); setUserFilter(null); }}
+                    className="text-xs font-black text-indigo-600 hover:text-indigo-800 bg-white px-3 py-1.5 rounded-xl border border-indigo-200 shadow-sm transition-all active:scale-95"
+                  >
+                    Quitar Filtro ✕
+                  </button>
+                </div>
+              )}
             </CardHeader>
             <CardContent className="p-0">
               <div className="grid grid-cols-7 bg-slate-50/30 border-b border-slate-100">

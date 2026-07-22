@@ -322,18 +322,37 @@ export default function ComprasClient({
         </Dialog>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-4 border-b border-slate-100 bg-slate-50/50">
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-            <Input
-              placeholder="Buscar por factura o proveedor..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 bg-white"
-            />
-          </div>
+      <div className="sticky top-0 z-50 bg-white/90 backdrop-blur-3xl p-4 lg:p-6 rounded-[2rem] lg:rounded-[3rem] border border-slate-100 shadow-xl flex flex-col xl:flex-row gap-4 lg:gap-6 items-center mb-6 mt-4">
+        <div className="relative flex-1 group w-full">
+          <Search className="absolute left-6 lg:left-8 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 w-5 h-5 lg:w-6 lg:h-6 transition-colors" />
+          <input 
+            type="text" 
+            placeholder="Buscar por factura o proveedor..." 
+            className="w-full pl-14 lg:pl-20 pr-6 lg:pr-10 py-4 lg:py-6 bg-slate-50 border-none rounded-[2rem] lg:rounded-[2.5rem] text-base lg:text-lg font-bold focus:bg-white focus:ring-[10px] lg:focus:ring-[15px] focus:ring-indigo-600/5 transition-all outline-none shadow-inner"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
+      </div>
+
+      {searchTerm !== '' && (
+        <div className="flex items-center justify-between bg-indigo-50 border border-indigo-100 px-6 py-3 rounded-2xl animate-in fade-in duration-200 mb-6">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-indigo-600 animate-ping" />
+            <p className="text-xs font-bold text-indigo-900">
+              Filtro activo de búsqueda: <span className="uppercase font-black text-indigo-700">{searchTerm}</span> ({filteredData.length} resultados)
+            </p>
+          </div>
+          <button 
+            onClick={() => setSearchTerm('')}
+            className="text-xs font-black text-indigo-600 hover:text-indigo-800 bg-white px-3 py-1.5 rounded-xl border border-indigo-200 shadow-sm transition-all active:scale-95"
+          >
+            Quitar Filtro ✕
+          </button>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
 
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
