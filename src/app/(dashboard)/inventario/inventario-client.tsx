@@ -23,6 +23,14 @@ interface InventarioClientProps {
   laboratorios: LaboratorioRow[]
 }
 
+// Función auxiliar global para el cálculo correcto del PV
+const calculatePV = (costo: number | string, margen: number | string) => {
+  const c = typeof costo === 'string' ? parseFloat(costo) : costo
+  const m = typeof margen === 'string' ? parseFloat(margen) : margen
+  if (isNaN(c) || isNaN(m) || m >= 100) return 0
+  return Math.round(c / (1 - (m / 100)))
+}
+
 // --- COMPONENTE NUMERICO MEJORADO ---
 const NumericInput = ({ label, value, onChange, min, step, required, className, inputClass, children }: any) => {
   // Format function to show up to 2 decimal places gracefully
@@ -207,12 +215,33 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
     const next3Months = addDays(today, 90)
     const tenDaysAgo = addDays(today, -10)
 
+    let totalVal = 0
+    let totalProfit = 0
+
     const performance = data.map(item => {
-      const costo = parseFloat(item.precio_caja as any) || 0
-      const margen = parseFloat((item.margen_caja || 0) as any) || 0
-      const stock = parseInt(item.cajas as any) || 0
-      const profit = (costo * (margen / 100)) * stock
-      return { name: item.nombre_producto, totalProfit: profit }
+      const costoC = parseFloat(item.precio_caja as any) || 0
+      const costoB = parseFloat(item.precio_blister as any) || 0
+      const costoU = parseFloat(item.precio_unidad as any) || 0
+
+      const margenC = parseFloat(item.margen_caja as any) || 0
+      const margenB = parseFloat(item.margen_blister as any) || 0
+      const margenU = parseFloat(item.margen_unidad as any) || 0
+
+      const stockC = parseInt(item.cajas as any) || 0
+      const stockB = parseInt(item.blisters as any) || 0
+      const stockU = parseInt(item.unidades as any) || 0
+
+      const val = (costoC * stockC) + (costoB * stockB) + (costoU * stockU)
+      totalVal += val
+
+      const pvC = calculatePV(costoC, margenC)
+      const pvB = calculatePV(costoB, margenB)
+      const pvU = calculatePV(costoU, margenU)
+
+      const profitItem = ((pvC - costoC) * stockC) + ((pvB - costoB) * stockB) + ((pvU - costoU) * stockU)
+      totalProfit += profitItem
+
+      return { name: item.nombre_producto, totalProfit: profitItem }
     }).sort((a, b) => b.totalProfit - a.totalProfit)
 
     const deadStock = data.filter(item => {
@@ -225,14 +254,9 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       totalItems: data.length,
       lowStock: data.filter(item => (parseInt(item.cajas as any) || 0) <= (parseInt(item.stock_minimo as any) || 2)).length,
       expiringSoon: data.filter(item => item.fecha_vencimiento && isBefore(parseISO(item.fecha_vencimiento), next3Months)).length,
-      inventoryValue: data.reduce((acc, item) => acc + ((parseInt(item.cajas as any) || 0) * (parseFloat(item.precio_caja as any) || 0)), 0),
+      inventoryValue: totalVal,
       starProduct: performance[0]?.name || 'N/A',
-      estimatedProfit: data.reduce((acc, item) => {
-        const costo = parseFloat(item.precio_caja as any) || 0
-        const margen = parseFloat((item.margen_caja || 0) as any) || 0
-        const stock = parseInt(item.cajas as any) || 0
-        return acc + ((costo * (margen / 100)) * stock)
-      }, 0),
+      estimatedProfit: totalProfit,
       deadStock
     }
   }, [data])
@@ -260,12 +284,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
 
   const totalPages = Math.ceil(filteredData.length / itemsPerPage)
 
-  const calculatePV = (costo: number | string, margen: number | string) => {
-    const c = typeof costo === 'string' ? parseFloat(costo) : costo
-    const m = typeof margen === 'string' ? parseFloat(margen) : margen
-    if (isNaN(c) || isNaN(m) || m >= 100) return 0
-    return Math.round(c / (1 - (m / 100)))
-  }
+  // calculatePV movido arriba
 
   // --- EXPORTACIÓN ROBUSTA (COMPATIBILIDAD EXCEL TOTAL) ---
   const handleExport = () => {
