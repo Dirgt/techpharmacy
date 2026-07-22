@@ -23,6 +23,59 @@ interface InventarioClientProps {
   laboratorios: LaboratorioRow[]
 }
 
+// --- COMPONENTE NUMERICO MEJORADO ---
+const NumericInput = ({ label, value, onChange, min, step, required, className, inputClass, children }: any) => {
+  const [localVal, setLocalVal] = useState<string>(value?.toString() || '');
+  const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    if (!isFocused) {
+      setLocalVal(value?.toString() || '');
+    }
+  }, [value, isFocused]);
+
+  const handleChange = (e: any) => {
+    const val = e.target.value;
+    setLocalVal(val);
+    
+    if (val === '') {
+      onChange(min !== undefined ? min : 0);
+      return;
+    }
+    
+    const num = step ? parseFloat(val) : parseInt(val, 10);
+    if (!isNaN(num)) {
+      onChange(num);
+    }
+  };
+
+  const handleBlur = () => {
+    setIsFocused(false);
+    if (localVal === '' || localVal === '-') {
+      setLocalVal((min !== undefined ? min : 0).toString());
+      onChange(min !== undefined ? min : 0);
+    }
+  };
+
+  return (
+    <div className={className || "space-y-2"}>
+      {label && <label className="text-xs font-semibold text-slate-600 uppercase block">{label}</label>}
+      {children}
+      <input 
+        type="number" 
+        min={min} 
+        step={step} 
+        required={required} 
+        className={inputClass || "w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm"}
+        value={isFocused ? localVal : value} 
+        onChange={handleChange} 
+        onFocus={() => setIsFocused(true)}
+        onBlur={handleBlur}
+      />
+    </div>
+  );
+};
+
 // --- COMPONENTE PVP MANUAL ---
 const PVPInput = ({ label, cost, margin, marginKey, setFormData, calculatePV }: any) => {
   const [localVal, setLocalVal] = useState<string>('');
@@ -637,14 +690,18 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                   <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 space-y-4">
                      <div className="flex items-center gap-2 text-slate-700 font-semibold uppercase text-xs tracking-wide"><Calculator className="w-4 h-4" /> Matriz de Empaque</div>
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                          <label className="text-xs font-semibold text-slate-600 uppercase block">Blísters por Caja</label>
-                          <input type="number" min="1" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.blisters_por_caja} onChange={e => setFormData({...formData, blisters_por_caja: parseInt(e.target.value) || 1})} />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-xs font-semibold text-slate-600 uppercase block">Unidades por Blíster</label>
-                          <input type="number" min="1" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.unidades_por_blister} onChange={e => setFormData({...formData, unidades_por_blister: parseInt(e.target.value) || 1})} />
-                        </div>
+                        <NumericInput 
+                          label="Blísters por Caja" 
+                          min={1} 
+                          value={formData.blisters_por_caja} 
+                          onChange={(v: number) => setFormData({...formData, blisters_por_caja: v})} 
+                        />
+                        <NumericInput 
+                          label="Unidades por Blíster" 
+                          min={1} 
+                          value={formData.unidades_por_blister} 
+                          onChange={(v: number) => setFormData({...formData, unidades_por_blister: v})} 
+                        />
                      </div>
                   </div>
                 )}
@@ -656,30 +713,41 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                       {[ {l: esProductoUnico ? 'Cantidad Total' : 'Cajas', k:'cajas'}, 
                          ...(!esProductoUnico ? [{l:'Blísters',k:'blisters'}, {l:'Unidades',k:'unidades'}] : []) 
                       ].map((x, i) => (
-                        <div key={i} className="space-y-2">
-                           <label className="text-xs font-semibold text-slate-600 uppercase block">{x.l}</label>
-                           <input type="number" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={(formData as any)[x.k]} onChange={e => setFormData({...formData, [x.k]: parseInt(e.target.value) || 0})} />
-                        </div>
+                        <NumericInput 
+                          key={i} 
+                          label={x.l} 
+                          value={(formData as any)[x.k]} 
+                          onChange={(v: number) => setFormData({...formData, [x.k]: v})} 
+                        />
                       ))}
                    </div>
 
                    <div className="pt-4 mt-4 border-t border-slate-200">
                      <div className="md:w-1/3 space-y-2">
-                       <label className="text-xs font-bold text-amber-600 uppercase flex items-center gap-2">
-                         <AlertCircle className="w-4 h-4"/> Stock Mínimo (Alerta)
-                       </label>
-                       <input type="number" min="0" className="w-full p-3 bg-amber-50/30 border border-amber-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-amber-600/20 focus:border-amber-600 outline-none transition-all shadow-sm" value={formData.stock_minimo} onChange={e => setFormData({...formData, stock_minimo: parseInt(e.target.value) || 0})} />
-                       <p className="text-[10px] text-slate-500 font-medium leading-tight">El sistema generará una alerta en rojo cuando el inventario caiga a este número de cajas/unidades.</p>
+                       <NumericInput 
+                         min={0} 
+                         value={formData.stock_minimo} 
+                         onChange={(v: number) => setFormData({...formData, stock_minimo: v})} 
+                         inputClass="w-full p-3 bg-amber-50/30 border border-amber-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-amber-600/20 focus:border-amber-600 outline-none transition-all shadow-sm"
+                       >
+                         <label className="text-xs font-bold text-amber-600 uppercase flex items-center gap-2 mb-2">
+                           <AlertCircle className="w-4 h-4"/> Stock Mínimo (Alerta)
+                         </label>
+                       </NumericInput>
+                       <p className="text-[10px] text-slate-500 font-medium leading-tight mt-1">El sistema generará una alerta en rojo cuando el inventario caiga a este número de cajas/unidades.</p>
                      </div>
                    </div>
                 </div>
 
                 {/* Precios */}
                 <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 space-y-6">
-                   <div className="space-y-2">
-                     <label className="text-xs font-semibold text-slate-600 uppercase block">Costo Adquisición (Caja) <span className="text-rose-500">*</span></label>
-                     <input required type="number" step="0.01" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.precio_caja} onChange={e => setFormData({...formData, precio_caja: parseFloat(e.target.value) || 0})} />
-                   </div>
+                   <NumericInput 
+                     label={esProductoUnico ? "Costo Adquisición" : "Costo Adquisición (Caja) *"} 
+                     required 
+                     step="0.01" 
+                     value={formData.precio_caja} 
+                     onChange={(v: number) => setFormData({...formData, precio_caja: v})} 
+                   />
 
                    <div className={`grid grid-cols-1 md:grid-cols-${esProductoUnico ? '1' : '3'} gap-6`}>
                       {[ 
