@@ -372,14 +372,21 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
   const handleAddLab = async () => {
     if (!newLabName) return
     try {
-      const lab = await createLaboratorio(newLabName)
-      setLocalLabs([...localLabs, lab])
-      setFormData({ ...formData, laboratorio_id: lab.id })
-      setIsAddingLab(false)
-      setNewLabName('')
-      toast.success('Laboratorio creado')
+      const result = await createLaboratorio(newLabName)
+      if (result.success) {
+        const lab = result.data
+        if (!localLabs.find(l => l.id === lab.id)) {
+          setLocalLabs([...localLabs, lab])
+        }
+        setFormData({ ...formData, laboratorio_id: lab.id })
+        setIsAddingLab(false)
+        setNewLabName('')
+        toast.success('Laboratorio seleccionado/creado')
+      } else {
+        toast.error(result.error || 'Error al crear laboratorio')
+      }
     } catch (error) {
-      toast.error('Error al crear laboratorio')
+      toast.error('Error de conexión al crear laboratorio')
     }
   }
 

@@ -89,14 +89,21 @@ export async function buscarProductoPorCodigo(codigo: string) {
  */
 export async function createLaboratorio(nombre: string) {
   const supabase = await createClient()
+  const cleanNombre = nombre.trim().toUpperCase()
+
+  // Optimización Extrema: Usamos UPSERT con ON CONFLICT.
+  // Esto delega la verificación y creación a PostgreSQL en UNA SOLA operación.
+  // No hay riesgo de consumo excesivo en capas gratuitas porque es 1 solo request.
   const { data, error } = await supabase
     .from('laboratorios')
-    .insert({ nombre })
+    .upsert({ nombre: cleanNombre }, { onConflict: 'nombre' })
     .select()
     .single()
 
-  if (error) throw error
-  return data
+  if (error) {
+    return { success: false, error: error.message }
+  }
+  return { success: true, data }
 }
 
 /**
