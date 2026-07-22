@@ -3,12 +3,12 @@
 
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { 
-  Calendar as CalendarIcon, 
-  Clock, 
-  Plus, 
-  Trash2, 
-  ChevronLeft, 
+import {
+  Calendar as CalendarIcon,
+  Clock,
+  Plus,
+  Trash2,
+  ChevronLeft,
   ChevronRight,
   CalendarDays,
   Edit3,
@@ -51,14 +51,14 @@ const getDaysInMonth = (date: Date) => {
   const month = date.getMonth()
   const firstDay = new Date(year, month, 1)
   const lastDay = new Date(year, month + 1, 0)
-  
+
   const days = []
   const startOffset = (firstDay.getDay() + 6) % 7
-  
+
   for (let i = 0; i < startOffset; i++) {
     days.push(null)
   }
-  
+
   for (let d = new Date(firstDay); d <= lastDay; d.setDate(d.getDate() + 1)) {
     days.push(new Date(d))
   }
@@ -67,8 +67,8 @@ const getDaysInMonth = (date: Date) => {
 
 const isSameDay = (d1: Date, d2: Date) => {
   return d1.getFullYear() === d2.getFullYear() &&
-         d1.getMonth() === d2.getMonth() &&
-         d1.getDate() === d2.getDate()
+    d1.getMonth() === d2.getMonth() &&
+    d1.getDate() === d2.getDate()
 }
 
 const formatMonth = (date: Date) => {
@@ -150,7 +150,7 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
       t.turno,
       t.turno === 'Turno Largo' ? '12' : '8'
     ])
-    
+
     const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n")
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
@@ -283,8 +283,8 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
             <p className="text-xs font-bold uppercase">Administración</p>
           </div>
           <div className="text-center">
-             <div className="border-t border-black w-48 mb-2" />
-             <p className="text-xs font-bold uppercase">Regente Farmacéutico</p>
+            <div className="border-t border-black w-48 mb-2" />
+            <p className="text-xs font-bold uppercase">Regente Farmacéutico</p>
           </div>
         </div>
       </div>
@@ -304,22 +304,22 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-           <Button 
-            onClick={handleCloneMonth} 
-            variant="outline" 
+          <Button
+            onClick={handleCloneMonth}
+            variant="outline"
             disabled={loading}
             className="rounded-2xl py-6 px-6 font-bold border-slate-200 hover:bg-slate-50 transition-all gap-2"
-           >
-              <Copy className="h-5 w-5 text-slate-500" /> Clonar Mes Anterior
-           </Button>
-           <Button 
-            onClick={handleExportCSV} 
-            variant="outline" 
+          >
+            <Copy className="h-5 w-5 text-slate-500" /> Clonar Mes Anterior
+          </Button>
+          <Button
+            onClick={handleExportCSV}
+            variant="outline"
             className="rounded-2xl py-6 px-6 font-bold border-slate-200 hover:bg-slate-50 transition-all gap-2"
-           >
-              <Download className="h-5 w-5 text-slate-500" /> Exportar CSV
-           </Button>
-           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+          >
+            <Download className="h-5 w-5 text-slate-500" /> Exportar CSV
+          </Button>
+          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-xl shadow-emerald-600/20 px-8 py-7 rounded-2xl text-lg font-black transition-all hover:scale-105 active:scale-95 gap-3">
                 <Plus className="h-6 w-6" /> Nuevo Turno
@@ -408,27 +408,27 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
               </div>
 
               <div className="flex gap-4 flex-wrap justify-center">
-                 {['Apertura', 'Cierre', 'Turno Largo'].map(type => (
-                   <Button 
+                {['Apertura', 'Cierre', 'Turno Largo'].map(type => (
+                  <Button
                     key={type}
                     onClick={() => setActiveFilter(activeFilter === type ? null : type)}
                     variant="ghost"
                     className={cn(
                       "flex items-center gap-3 px-8 py-8 rounded-[1.5rem] border-2 transition-all hover:scale-105",
-                      type === 'Apertura' ? "bg-emerald-50 text-emerald-700" : 
-                      type === 'Cierre' ? "bg-sky-50 text-sky-700" : "bg-violet-50 text-violet-700",
+                      type === 'Apertura' ? "bg-emerald-50 text-emerald-700" :
+                        type === 'Cierre' ? "bg-sky-50 text-sky-700" : "bg-violet-50 text-violet-700",
                       activeFilter === type ? "border-indigo-500 ring-[8px] ring-indigo-500/5 bg-white shadow-xl scale-105 opacity-100" : "border-transparent opacity-60 bg-white hover:bg-slate-50"
                     )}
-                   >
-                      <div className={cn("h-3 w-3 rounded-full shadow-sm", 
-                        type === 'Apertura' ? 'bg-emerald-500' : 
+                  >
+                    <div className={cn("h-3 w-3 rounded-full shadow-sm",
+                      type === 'Apertura' ? 'bg-emerald-500' :
                         type === 'Cierre' ? 'bg-sky-500' : 'bg-violet-500'
-                      )} />
-                      <span className="text-xs font-black uppercase tracking-[0.2em]">{type === 'Turno Largo' ? 'Largo' : type}</span>
-                   </Button>
-                 ))}
+                    )} />
+                    <span className="text-xs font-black uppercase tracking-[0.2em]">{type === 'Turno Largo' ? 'Largo' : type}</span>
+                  </Button>
+                ))}
               </div>
-              
+
               {(activeFilter || userFilter) && (
                 <div className="flex items-center justify-between bg-indigo-50 border border-indigo-100 px-6 py-3 mx-6 mt-6 mb-2 rounded-2xl animate-in fade-in duration-200">
                   <div className="flex items-center gap-2">
@@ -437,7 +437,7 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
                       Filtro activo: <span className="uppercase font-black text-indigo-700">{activeFilter || 'Usuario Seleccionado'}</span> ({filteredTurnos.length} resultados)
                     </p>
                   </div>
-                  <button 
+                  <button
                     onClick={() => { setActiveFilter(null); setUserFilter(null); }}
                     className="text-xs font-black text-indigo-600 hover:text-indigo-800 bg-white px-3 py-1.5 rounded-xl border border-indigo-200 shadow-sm transition-all active:scale-95"
                   >
@@ -457,18 +457,18 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
               <div className="grid grid-cols-7 auto-rows-[200px]">
                 {days.map((day, i) => {
                   if (!day) return <div key={`empty-${i}`} className="bg-slate-50/10 border-r border-b border-slate-50" />
-                  
+
                   const dayTurnos = filteredTurnos.filter(t => isSameDay(new Date(t.fecha + 'T00:00:00'), day))
                   const isToday = isSameDay(day, new Date())
-                  
+
                   // Analizador de Cobertura Crítica
                   const hasApertura = dayTurnos.some(t => t.turno === 'Apertura' || t.turno === 'Turno Largo')
                   const hasCierre = dayTurnos.some(t => t.turno === 'Cierre' || t.turno === 'Turno Largo')
                   const isCritical = !hasApertura || !hasCierre
 
                   return (
-                    <div 
-                      key={day.toString()} 
+                    <div
+                      key={day.toString()}
                       onClick={() => handleDayClick(day)}
                       className={cn(
                         "p-6 border-r border-b border-slate-50 transition-all hover:bg-emerald-50/20 hover:z-10 hover:shadow-inner cursor-pointer relative group",
@@ -483,18 +483,18 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
                           {day.getDate()}
                         </span>
                         {isCritical && !activeFilter && (
-                           <div className="group/alert relative">
-                              <AlertTriangle className="h-5 w-5 text-amber-500 fill-amber-100 animate-pulse" />
-                              <div className="absolute bottom-full right-0 mb-2 w-48 bg-slate-900 text-white text-[10px] p-3 rounded-xl opacity-0 group-hover/alert:opacity-100 transition-opacity z-50 font-bold shadow-2xl">
-                                 ⚠️ Falta cobertura en {!hasApertura ? 'APERTURA' : 'CIERRE'}.
-                              </div>
-                           </div>
+                          <div className="group/alert relative">
+                            <AlertTriangle className="h-5 w-5 text-amber-500 fill-amber-100 animate-pulse" />
+                            <div className="absolute bottom-full right-0 mb-2 w-48 bg-slate-900 text-white text-[10px] p-3 rounded-xl opacity-0 group-hover/alert:opacity-100 transition-opacity z-50 font-bold shadow-2xl">
+                              ⚠️ Falta cobertura en {!hasApertura ? 'APERTURA' : 'CIERRE'}.
+                            </div>
+                          </div>
                         )}
                       </div>
                       <div className="space-y-3 mt-2">
                         {dayTurnos.map(turno => (
-                          <div 
-                            key={turno.id} 
+                          <div
+                            key={turno.id}
                             onClick={(e) => handleTurnoClick(turno, e)}
                             className={cn(
                               "group/item relative flex flex-col p-4 rounded-[1.5rem] border-2 transition-all hover:scale-105 hover:shadow-xl hover:z-20 cursor-pointer",
@@ -503,8 +503,8 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
                           >
                             <span className="text-[10px] font-black uppercase truncate tracking-tight">{turno.profiles.full_name}</span>
                             <div className="flex items-center justify-between mt-2">
-                               <span className="text-[9px] font-black opacity-60 uppercase">{turno.turno}</span>
-                               <CheckCircle2 className="h-3 w-3 opacity-0 group-hover/item:opacity-100 transition-opacity" />
+                              <span className="text-[9px] font-black opacity-60 uppercase">{turno.turno}</span>
+                              <CheckCircle2 className="h-3 w-3 opacity-0 group-hover/item:opacity-100 transition-opacity" />
                             </div>
                           </div>
                         ))}
@@ -530,8 +530,8 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
               {initialTurnos
                 .filter(t => isSameDay(new Date(t.fecha + 'T00:00:00'), new Date()))
                 .map(t => (
-                  <div 
-                    key={t.id} 
+                  <div
+                    key={t.id}
                     onClick={(e) => handleTurnoClick(t, e)}
                     className="group flex items-center gap-5 p-5 rounded-[2rem] bg-slate-50 hover:bg-white hover:shadow-xl transition-all border border-transparent hover:border-slate-100 cursor-pointer"
                   >
@@ -559,34 +559,34 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
               <BarChart3 className="h-48 w-48" />
             </div>
             <h3 className="text-xl font-black uppercase tracking-[0.2em] mb-10 flex items-center gap-3 relative z-10">
-               Métricas Mes
+              Métricas Mes
             </h3>
-            
+
             <div className="space-y-6 mb-12 relative z-10">
-               {stats.length > 0 ? stats.map(s => (
-                 <div key={s.name} className="flex flex-col gap-3 p-5 rounded-[1.75rem] bg-white/10 backdrop-blur-md border border-white/10 hover:bg-white/20 transition-all">
-                    <div className="flex justify-between items-center">
-                       <span className="text-sm font-black truncate max-w-[120px] uppercase tracking-wider">{s.name}</span>
-                       <span className="text-2xl font-black">{s.hours}h</span>
-                    </div>
-                    <div className="w-full bg-emerald-900/40 h-2.5 rounded-full overflow-hidden">
-                       <div 
-                        className="bg-white h-full rounded-full transition-all duration-1000" 
-                        style={{ width: `${Math.min((s.hours / 160) * 100, 100)}%` }}
-                       />
-                    </div>
-                    <div className="flex justify-between items-center">
-                       <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest">{s.count} turnos</p>
-                       {s.hours >= 160 && <CheckCircle2 className="h-4 w-4 text-emerald-300" />}
-                    </div>
-                 </div>
-               )) : (
-                 <p className="text-sm font-bold opacity-60 italic text-center py-4">Sin datos de actividad.</p>
-               )}
+              {stats.length > 0 ? stats.map(s => (
+                <div key={s.name} className="flex flex-col gap-3 p-5 rounded-[1.75rem] bg-white/10 backdrop-blur-md border border-white/10 hover:bg-white/20 transition-all">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-black truncate max-w-[120px] uppercase tracking-wider">{s.name}</span>
+                    <span className="text-2xl font-black">{s.hours}h</span>
+                  </div>
+                  <div className="w-full bg-emerald-900/40 h-2.5 rounded-full overflow-hidden">
+                    <div
+                      className="bg-white h-full rounded-full transition-all duration-1000"
+                      style={{ width: `${Math.min((s.hours / 160) * 100, 100)}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest">{s.count} turnos</p>
+                    {s.hours >= 160 && <CheckCircle2 className="h-4 w-4 text-emerald-300" />}
+                  </div>
+                </div>
+              )) : (
+                <p className="text-sm font-bold opacity-60 italic text-center py-4">Sin datos de actividad.</p>
+              )}
             </div>
 
             <div className="space-y-4 relative z-10">
-              <Button 
+              <Button
                 onClick={handlePrint}
                 className="w-full bg-white text-emerald-700 hover:bg-emerald-50 rounded-2xl font-black py-7 text-lg shadow-xl shadow-black/5 transition-transform active:scale-95 gap-3"
               >
@@ -601,28 +601,28 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
         <DialogContent className="bg-white border-none shadow-2xl rounded-[3rem] p-0 max-w-2xl overflow-hidden outline-none no-print">
           {selectedTurno && (
             <div className="flex flex-col">
-              <div className={cn("p-12 text-white relative overflow-hidden transition-colors duration-500", 
-                selectedTurno.turno === 'Apertura' ? 'bg-emerald-600' : 
-                selectedTurno.turno === 'Cierre' ? 'bg-sky-600' : 'bg-violet-600'
+              <div className={cn("p-12 text-white relative overflow-hidden transition-colors duration-500",
+                selectedTurno.turno === 'Apertura' ? 'bg-emerald-600' :
+                  selectedTurno.turno === 'Cierre' ? 'bg-sky-600' : 'bg-violet-600'
               )}>
                 <div className="absolute top-0 right-0 p-12 opacity-10">
-                   <CalendarDays className="h-48 w-48 rotate-12" />
+                  <CalendarDays className="h-48 w-48 rotate-12" />
                 </div>
                 <div className="relative z-10">
                   <div className="flex items-center justify-between mb-8">
                     <DialogTitle className="text-[10px] font-black uppercase tracking-[0.4em] opacity-80">
-                       Asignación Técnica
+                      Asignación Técnica
                     </DialogTitle>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => setIsDetailDialogOpen(false)}
                       className="h-10 w-10 rounded-full hover:bg-white/20 text-white"
                     >
                       <X className="h-5 w-5" />
                     </Button>
                   </div>
-                  
+
                   <div className="flex items-center gap-8">
                     <div className="h-24 w-24 rounded-[2rem] bg-white/20 backdrop-blur-xl flex items-center justify-center font-black text-4xl border border-white/30 shadow-2xl">
                       {selectedTurno.profiles.full_name.charAt(0)}
@@ -639,9 +639,9 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
 
               <div className="p-12 bg-white space-y-12">
                 <DialogDescription className="hidden">
-                   Detalles operativos del turno de {selectedTurno.profiles.full_name}.
+                  Detalles operativos del turno de {selectedTurno.profiles.full_name}.
                 </DialogDescription>
-                
+
                 {!isEditing ? (
                   <>
                     <div className="grid grid-cols-2 gap-12">
@@ -680,18 +680,18 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
                     </div>
 
                     <div className="flex gap-4 pt-4">
-                      <Button 
-                        variant="ghost" 
+                      <Button
+                        variant="ghost"
                         className="flex-1 rounded-[1.75rem] py-8 font-black text-red-500 hover:bg-red-50 hover:text-red-600 transition-all text-base"
                         onClick={() => handleDeleteTurno(selectedTurno.id)}
                       >
                         <Trash2 className="h-6 w-6 mr-3" /> Eliminar Registro
                       </Button>
-                      <Button 
+                      <Button
                         onClick={() => setIsEditing(true)}
                         className={cn("flex-1 rounded-[1.75rem] py-8 font-black text-white shadow-2xl transition-all hover:scale-105 active:scale-95 text-base",
-                          selectedTurno.turno === 'Apertura' ? 'bg-emerald-600 shadow-emerald-600/30' : 
-                          selectedTurno.turno === 'Cierre' ? 'bg-sky-600 shadow-sky-600/30' : 'bg-violet-600 shadow-violet-600/30'
+                          selectedTurno.turno === 'Apertura' ? 'bg-emerald-600 shadow-emerald-600/30' :
+                            selectedTurno.turno === 'Cierre' ? 'bg-sky-600 shadow-sky-600/30' : 'bg-violet-600 shadow-violet-600/30'
                         )}
                       >
                         <Edit3 className="h-6 w-6 mr-3" /> Modificar Horario
@@ -701,21 +701,21 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
                 ) : (
                   <form onSubmit={handleUpdateTurno} className="space-y-10 animate-in fade-in slide-in-from-bottom-6">
                     <div className="flex items-center gap-6 mb-4">
-                       <Button type="button" variant="ghost" onClick={() => setIsEditing(false)} className="rounded-2xl h-14 w-14 p-0 hover:bg-slate-50">
-                          <ArrowLeft className="h-8 w-8 text-slate-600" />
-                       </Button>
-                       <h3 className="text-3xl font-black text-slate-900 tracking-tight">Editar Asignación</h3>
+                      <Button type="button" variant="ghost" onClick={() => setIsEditing(false)} className="rounded-2xl h-14 w-14 p-0 hover:bg-slate-50">
+                        <ArrowLeft className="h-8 w-8 text-slate-600" />
+                      </Button>
+                      <h3 className="text-3xl font-black text-slate-900 tracking-tight">Editar Asignación</h3>
                     </div>
 
                     <div className="grid grid-cols-1 gap-10">
-                       <div className="space-y-4">
+                      <div className="space-y-4">
                         <Label className="text-slate-800 font-black ml-2 text-xs uppercase tracking-[0.2em]">Responsable</Label>
                         <Select name="usuario_id" defaultValue={selectedTurno.usuario_id} required>
                           <SelectTrigger className="bg-slate-50 border-none rounded-[1.75rem] py-8 px-8 shadow-inner font-bold text-lg">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent className="bg-white border-slate-100 rounded-2xl p-2">
-                             {usuarios.map(u => (
+                            {usuarios.map(u => (
                               <SelectItem key={u.id} value={u.id} className="font-bold py-4">{u.full_name}</SelectItem>
                             ))}
                           </SelectContent>

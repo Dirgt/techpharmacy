@@ -157,7 +157,7 @@ export default function ProveedoresClient({ initialData }: { initialData: Provee
         </Dialog>
       </div>
 
-      <div className="sticky top-0 z-50 bg-white/90 backdrop-blur-3xl p-4 lg:p-6 rounded-[2rem] lg:rounded-[3rem] border border-slate-100 shadow-xl flex flex-col xl:flex-row gap-4 lg:gap-6 items-center mb-6 mt-4">
+      <div className="relative bg-white p-4 lg:p-6 rounded-[2rem] lg:rounded-[3rem] border border-slate-100 shadow-xl flex flex-col xl:flex-row gap-4 lg:gap-6 items-center mb-6 mt-4">
         <div className="relative flex-1 group w-full">
           <Search className="absolute left-6 lg:left-8 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 w-5 h-5 lg:w-6 lg:h-6 transition-colors" />
           <input 

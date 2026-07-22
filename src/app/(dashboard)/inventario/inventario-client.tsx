@@ -4,7 +4,7 @@
 'use client'
 
 import React, { useState, useMemo, useEffect } from 'react'
-import { 
+import {
   Plus, Search, Package, Edit3, Info, Check,
   AlertCircle, Activity, History, TrendingUp, FileText,
   ArrowDownCircle, Gem, MousePointer2, Calculator
@@ -46,12 +46,12 @@ const NumericInput = ({ label, value, onChange, min, step, required, className, 
   const handleChange = (e: any) => {
     const val = e.target.value;
     setLocalVal(val);
-    
+
     if (val === '') {
       onChange(min !== undefined ? min : 0);
       return;
     }
-    
+
     const num = step ? parseFloat(val) : parseInt(val, 10);
     if (!isNaN(num)) {
       onChange(num);
@@ -70,14 +70,14 @@ const NumericInput = ({ label, value, onChange, min, step, required, className, 
     <div className={className || "space-y-2"}>
       {label && <label className="text-xs font-semibold text-slate-600 uppercase block">{label}</label>}
       {children}
-      <input 
-        type="number" 
-        min={min} 
-        step={step} 
-        required={required} 
+      <input
+        type="number"
+        min={min}
+        step={step}
+        required={required}
         className={inputClass || "w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm"}
-        value={isFocused ? localVal : value} 
-        onChange={handleChange} 
+        value={isFocused ? localVal : value}
+        onChange={handleChange}
         onFocus={() => setIsFocused(true)}
         onBlur={handleBlur}
       />
@@ -99,44 +99,44 @@ const PVPInput = ({ label, cost, margin, marginKey, setFormData, calculatePV }: 
   const handleChange = (e: any) => {
     const val = e.target.value;
     setLocalVal(val);
-    
+
     const pvp = parseFloat(val);
     if (val === '') {
-      setFormData((p: any) => ({...p, [marginKey]: 0}));
+      setFormData((p: any) => ({ ...p, [marginKey]: 0 }));
       return;
     }
     if (isNaN(pvp) || pvp < 0) return;
-    
+
     if (cost > 0) {
       if (pvp === 0) {
-         setFormData((p: any) => ({...p, [marginKey]: 0}));
+        setFormData((p: any) => ({ ...p, [marginKey]: 0 }));
       } else {
-         const newMargin = (1 - (cost / pvp)) * 100;
-         // Guardamos el margen con toda su precisión matemática para que el cálculo reversible dé exactamente el PVP ingresado.
-         setFormData((p: any) => ({...p, [marginKey]: newMargin}));
+        const newMargin = (1 - (cost / pvp)) * 100;
+        // Guardamos el margen con toda su precisión matemática para que el cálculo reversible dé exactamente el PVP ingresado.
+        setFormData((p: any) => ({ ...p, [marginKey]: newMargin }));
       }
     }
   };
 
   return (
     <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm space-y-1">
-       <span className="text-xs font-semibold text-slate-500 uppercase block mb-1">{label}</span>
-       <div className="relative">
-         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">$</span>
-         <input 
-           type="number"
-           step="0.01"
-           min="0"
-           disabled={cost <= 0}
-           title={cost <= 0 ? "Ingresa el Costo primero" : ""}
-           className="w-full pl-7 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-lg font-bold text-slate-800 focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-           value={localVal}
-           onChange={handleChange}
-           onFocus={() => setIsFocused(true)}
-           onBlur={() => { setIsFocused(false); setLocalVal(Number(calculatePV(cost, margin)).toString()); }}
-         />
-       </div>
-       <div className="flex-1 text-center">
+      <span className="text-xs font-semibold text-slate-500 uppercase block mb-1">{label}</span>
+      <div className="relative">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">$</span>
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          disabled={cost <= 0}
+          title={cost <= 0 ? "Ingresa el Costo primero" : ""}
+          className="w-full pl-7 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-lg font-bold text-slate-800 focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          value={localVal}
+          onChange={handleChange}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => { setIsFocused(false); setLocalVal(Number(calculatePV(cost, margin)).toString()); }}
+        />
+      </div>
+      <div className="flex-1 text-center">
         <span className="text-[10px] font-semibold text-slate-400">Margen: {typeof margin === 'number' && !Number.isInteger(margin) ? parseFloat(margin.toFixed(2)) : (margin || 0)}%</span>
       </div>
     </div>
@@ -153,7 +153,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
   const [isAddingLab, setIsAddingLab] = useState(false)
   const [newLabName, setNewLabName] = useState('')
   const [localLabs, setLocalLabs] = useState(laboratorios)
-  
+
   const [showHistory, setShowHistory] = useState(false)
   const [historyProduct, setHistoryProduct] = useState<any>(null)
 
@@ -165,13 +165,13 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
   // Estado del Formulario Robusto
   const [formData, setFormData] = useState({
     id: '', producto_id: '', codigo: '', nombre: '', principio_activo: '', laboratorio_id: '',
-    fecha_vencimiento: '', 
+    fecha_vencimiento: '',
     cajas: 0, blisters: 0, unidades: 0,
-    blisters_por_caja: 1, 
+    blisters_por_caja: 1,
     unidades_por_blister: 1,
-    precio_caja: 0, 
-    precio_blister: 0, 
-    precio_unidad: 0, 
+    precio_caja: 0,
+    precio_blister: 0,
+    precio_unidad: 0,
     porcentaje_ganancia: 20,
     margen_blister: 20,
     margen_unidad: 30,
@@ -185,8 +185,8 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
 
   // --- SECCIONES DE FARMACIA ---
   const SECCIONES = [
-    'Analgésicos', 'Antibióticos', 'Éticos', 'Genéricos', 'Óvulos', 'Cremas', 
-    'Inyectables', 'Fitoterapéuticos', 'Pediátricos', 'Gastrointestinales', 
+    'Analgésicos', 'Antibióticos', 'Éticos', 'Genéricos', 'Óvulos', 'Cremas',
+    'Inyectables', 'Fitoterapéuticos', 'Pediátricos', 'Gastrointestinales',
     'Oftálmicos', 'Dermatológicos', 'Cuidado Personal', 'Suplementos', 'Otros'
   ]
 
@@ -194,7 +194,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
   useEffect(() => {
     const costoBlister = formData.precio_caja / (formData.blisters_por_caja || 1)
     const costoUnidad = costoBlister / (formData.unidades_por_blister || 1)
-    
+
     setFormData(prev => ({
       ...prev,
       precio_blister: Number(costoBlister.toFixed(2)),
@@ -206,7 +206,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
     const today = new Date()
     const next3Months = addDays(today, 90)
     const tenDaysAgo = addDays(today, -10)
-    
+
     const performance = data.map(item => {
       const costo = parseFloat(item.precio_caja as any) || 0
       const margen = parseFloat((item.margen_caja || 0) as any) || 0
@@ -238,7 +238,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
   }, [data])
 
   const filteredData = useMemo(() => {
-    let result = data.filter(item => 
+    let result = data.filter(item =>
       (item.nombre_producto || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (item.codigo || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (item.laboratorio || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -247,8 +247,8 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
     if (filterType === 'stock_bajo') result = result.filter(item => (item.cajas || 0) <= (item.stock_minimo || 2))
     if (filterType === 'vencimiento') result = result.filter(item => item.fecha_vencimiento && isBefore(parseISO(item.fecha_vencimiento), addDays(new Date(), 90)))
     if (filterType === 'dead_stock') {
-        const tenDaysAgo = addDays(new Date(), -10)
-        result = result.filter(item => item.updated_at ? (isBefore(parseISO(item.updated_at), tenDaysAgo) && (item.cajas || 0) > 0) : false)
+      const tenDaysAgo = addDays(new Date(), -10)
+      result = result.filter(item => item.updated_at ? (isBefore(parseISO(item.updated_at), tenDaysAgo) && (item.cajas || 0) > 0) : false)
     }
     return result
   }, [data, searchTerm, filterType])
@@ -270,9 +270,9 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
   // --- EXPORTACIÓN ROBUSTA (COMPATIBILIDAD EXCEL TOTAL) ---
   const handleExport = () => {
     const headers = ['CODIGO', 'PRODUCTO', 'LABORATORIO', 'SECCION', 'LOTE', 'INVIMA', 'VENCIMIENTO', 'STOCK_CAJAS', 'VALOR_COMPRA_TOTAL', 'VALOR_VENTA_ESTIMADO', 'MARGEN_%']
-    
+
     const csvRows = [
-      "sep=;", 
+      "sep=;",
       headers.join(";"),
       ...filteredData.map(item => {
         const ventaTotal = calculatePV(item.precio_caja || 0, item.margen_caja || 0) * (item.cajas || 0)
@@ -298,14 +298,14 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement("a")
     const url = URL.createObjectURL(blob)
-    
+
     link.setAttribute("href", url)
     link.setAttribute("download", `auditoria_techpharmacy_${format(new Date(), 'yyyyMMdd_HHmm')}.csv`)
     link.style.visibility = 'hidden'
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
-    
+
     toast.success('Auditoría exportada para Excel')
   }
 
@@ -326,7 +326,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       porcentaje_ganancia: item.margen_caja || item.porcentaje_ganancia || 20,
       margen_blister: item.margen_blister || 20,
       margen_unidad: item.margen_unidad || 30,
-      blisters_por_caja: item.blisters_por_caja !== undefined ? item.blisters_por_caja : 1, 
+      blisters_por_caja: item.blisters_por_caja !== undefined ? item.blisters_por_caja : 1,
       unidades_por_blister: item.unidades_por_blister !== undefined ? item.unidades_por_blister : 1,
       lote: item.lote || '',
       registro_invima: item.registro_invima || '',
@@ -408,8 +408,8 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
           { label: 'VENCIMIENTO', val: stats.expiringSoon, icon: AlertCircle, color: 'text-amber-600', bg: 'bg-amber-50', filter: 'vencimiento', sub: 'Revisión Inmediata' },
           { label: 'STOCK MUERTO', val: stats.deadStock, icon: Activity, color: 'text-slate-600', bg: 'bg-slate-50', filter: 'dead_stock', sub: '10 Días Inactivo' },
         ].map((item, i) => (
-          <button 
-            key={i} 
+          <button
+            key={i}
             onClick={() => setFilterType(filterType === item.filter ? 'todos' : item.filter)}
             className={`text-left p-5 lg:p-6 rounded-[2rem] lg:rounded-[2.5rem] border transition-all relative group h-full flex flex-col justify-between ${filterType === item.filter && item.filter !== 'todos' ? 'border-indigo-500 ring-[8px] ring-indigo-500/5 bg-white shadow-xl' : 'bg-white border-slate-100 hover:shadow-xl hover:-translate-y-1'}`}
           >
@@ -425,8 +425,8 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
               </div>
             </div>
             <div className="flex items-center justify-between w-full mt-auto gap-2">
-               <span className="text-[9px] lg:text-[10px] font-bold text-slate-400 uppercase bg-slate-50 px-3 py-2 rounded-lg border border-slate-100 flex-1 whitespace-normal text-left leading-tight break-words">{item.sub}</span>
-               <div className={`w-2 h-2 shrink-0 rounded-full ${item.color.replace('text', 'bg')} animate-pulse`} />
+              <span className="text-[9px] lg:text-[10px] font-bold text-slate-400 uppercase bg-slate-50 px-3 py-2 rounded-lg border border-slate-100 flex-1 whitespace-normal text-left leading-tight break-words">{item.sub}</span>
+              <div className={`w-2 h-2 shrink-0 rounded-full ${item.color.replace('text', 'bg')} animate-pulse`} />
             </div>
           </button>
         ))}
@@ -440,7 +440,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
               Filtro activo: <span className="uppercase font-black text-indigo-700">{filterType.replace('_', ' ')}</span> ({filteredData.length} resultados)
             </p>
           </div>
-          <button 
+          <button
             onClick={() => setFilterType('todos')}
             className="text-xs font-black text-indigo-600 hover:text-indigo-800 bg-white px-3 py-1.5 rounded-xl border border-indigo-200 shadow-sm transition-all active:scale-95"
           >
@@ -450,12 +450,12 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       )}
 
       {/* BARRA DE ACCIÓN SUPREMA */}
-      <div className="sticky top-0 z-50 bg-white/90 backdrop-blur-3xl p-4 lg:p-6 rounded-[2rem] lg:rounded-[3rem] border border-slate-100 shadow-xl flex flex-col xl:flex-row gap-4 lg:gap-6 items-center">
+      <div className="relative bg-white p-4 lg:p-6 rounded-[2rem] lg:rounded-[3rem] border border-slate-100 shadow-xl flex flex-col xl:flex-row gap-4 lg:gap-6 items-center">
         <div className="relative flex-1 group w-full">
           <Search className="absolute left-6 lg:left-8 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 w-5 h-5 lg:w-6 lg:h-6 transition-colors" />
-          <input 
-            type="text" 
-            placeholder="Escanear código de barras o buscar medicamento/sección..." 
+          <input
+            type="text"
+            placeholder="Escanear código de barras o buscar medicamento/sección..."
             className="w-full pl-14 lg:pl-20 pr-6 lg:pr-10 py-4 lg:py-6 bg-slate-50 border-none rounded-[2rem] lg:rounded-[2.5rem] text-base lg:text-lg font-bold focus:bg-white focus:ring-[10px] lg:focus:ring-[15px] focus:ring-indigo-600/5 transition-all outline-none shadow-inner"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -463,16 +463,16 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
         </div>
         <div className="flex flex-col sm:flex-row gap-3 lg:gap-4 w-full xl:w-auto">
           <button onClick={handleExport} className="w-full sm:w-auto justify-center px-6 lg:px-10 py-4 lg:py-6 bg-white border-2 border-slate-100 rounded-[2rem] lg:rounded-[2.5rem] text-[10px] lg:text-xs font-black text-slate-600 flex items-center gap-2 lg:gap-3 hover:border-indigo-600 hover:text-indigo-600 transition-all active:scale-95 shadow-sm">
-             <FileText className="w-4 h-4 lg:w-5 lg:h-5" /> AUDITORÍA EXCEL
+            <FileText className="w-4 h-4 lg:w-5 lg:h-5" /> AUDITORÍA EXCEL
           </button>
-          <button 
+          <button
 
             onClick={() => {
-              setFormData({ 
+              setFormData({
                 id: '', producto_id: '', codigo: '', nombre: '', principio_activo: '', laboratorio_id: '',
                 fecha_vencimiento: '', cajas: 0, blisters: 0, unidades: 0,
                 blisters_por_caja: 1, unidades_por_blister: 1,
-                precio_caja: 0, precio_blister: 0, precio_unidad: 0, 
+                precio_caja: 0, precio_blister: 0, precio_unidad: 0,
                 porcentaje_ganancia: 20, margen_blister: 20, margen_unidad: 30,
                 lote: '', registro_invima: '', seccion: '', ubicacion: '', stock_minimo: 2
               })
@@ -505,7 +505,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                 const pvCaja = calculatePV(item.precio_caja || 0, item.margen_caja || 0)
                 const pvBlister = calculatePV(item.precio_blister || 0, item.margen_blister || 0)
                 const pvUnidad = calculatePV(item.precio_unidad || 0, item.margen_unidad || 0)
-                
+
                 const expStatus = getExpirationStatus(item.fecha_vencimiento || '')
                 const isCritical = (item.cajas || 0) <= 2
 
@@ -514,36 +514,36 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                     <td className="px-8 py-4">
                       <div className="flex items-center gap-4">
                         <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all bg-slate-100 text-slate-400 group-hover:bg-white group-hover:shadow-lg`}>
-                           <Package className="w-6 h-6" />
+                          <Package className="w-6 h-6" />
                         </div>
                         <div className="flex flex-col min-w-0">
                           <div className="flex items-center gap-2">
-                             <div className="flex items-center gap-2">
-                             <span className="text-sm font-black text-slate-900 uppercase truncate max-w-[200px] leading-tight group-hover:text-indigo-600" title={item.nombre_producto || undefined}>{item.nombre_producto}</span>
-                             <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">{item.codigo}</span>
-                          </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-black text-slate-900 uppercase truncate max-w-[200px] leading-tight group-hover:text-indigo-600" title={item.nombre_producto || undefined}>{item.nombre_producto}</span>
+                              <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">{item.codigo}</span>
+                            </div>
                           </div>
                           <div className="flex items-center gap-2 mt-1">
-                             <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100">{item.laboratorio || 'S.L'}</span>
-                             <span className="text-[9px] font-black text-white bg-slate-900 px-2 py-0.5 rounded-lg">Lote: {item.lote || 'N/A'}</span>
-                             <span className="text-[10px] font-bold text-slate-400 truncate max-w-[80px]">INVIMA: {item.registro_invima || 'N/A'}</span>
+                            <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100">{item.laboratorio || 'S.L'}</span>
+                            <span className="text-[9px] font-black text-white bg-slate-900 px-2 py-0.5 rounded-lg">Lote: {item.lote || 'N/A'}</span>
+                            <span className="text-[10px] font-bold text-slate-400 truncate max-w-[80px]">INVIMA: {item.registro_invima || 'N/A'}</span>
                           </div>
                         </div>
                       </div>
                     </td>
 
                     <td className="px-4 py-4 text-center">
-                       <div className="flex flex-col items-center gap-1">
-                          <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100 uppercase">{item.seccion || 'General'}</span>
-                          {item.ubicacion && <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">{item.ubicacion}</span>}
-                       </div>
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100 uppercase">{item.seccion || 'General'}</span>
+                        {item.ubicacion && <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">{item.ubicacion}</span>}
+                      </div>
                     </td>
 
                     <td className="px-4 py-4 text-center">
-                       <div className="flex flex-col items-center gap-1">
-                          <div className={`w-3 h-3 rounded-full ${expStatus.color}`} />
-                          <span className="text-[10px] font-black text-slate-900">{item.fecha_vencimiento ? format(parseISO(item.fecha_vencimiento), 'dd MMM yyyy') : 'N/A'}</span>
-                       </div>
+                      <div className="flex flex-col items-center gap-1">
+                        <div className={`w-3 h-3 rounded-full ${expStatus.color}`} />
+                        <span className="text-[10px] font-black text-slate-900">{item.fecha_vencimiento ? format(parseISO(item.fecha_vencimiento), 'dd MMM yyyy') : 'N/A'}</span>
+                      </div>
                     </td>
 
                     <td className="px-4 py-4 text-center">
@@ -565,10 +565,10 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                     </td>
 
                     <td className="px-8 py-4 text-right">
-                       <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => openHistory(item)} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-amber-500 hover:text-white rounded-xl border border-slate-200 transition-all shadow-sm"><History className="w-4 h-4" /></button>
-                          <button onClick={() => { selectProduct(item); setIsModalOpen(true); }} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-slate-900 hover:text-white rounded-xl border border-slate-200 transition-all shadow-sm"><Edit3 className="w-4 h-4" /></button>
-                       </div>
+                      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => openHistory(item)} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-amber-500 hover:text-white rounded-xl border border-slate-200 transition-all shadow-sm"><History className="w-4 h-4" /></button>
+                        <button onClick={() => { selectProduct(item); setIsModalOpen(true); }} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-slate-900 hover:text-white rounded-xl border border-slate-200 transition-all shadow-sm"><Edit3 className="w-4 h-4" /></button>
+                      </div>
                     </td>
                   </tr>
                 )
@@ -582,7 +582,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-end bg-slate-900/60 backdrop-blur-sm p-4 sm:p-6 animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-3xl h-[calc(100vh-2rem)] sm:h-[calc(100vh-3rem)] rounded-2xl shadow-2xl flex flex-col animate-in slide-in-from-right duration-500 overflow-hidden relative border border-slate-200">
-            
+
             <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white">
               <div>
                 <h2 className="text-xl font-semibold text-slate-800 uppercase tracking-wide">{formData.id ? 'Editar Producto' : 'Nuevo Ingreso'}</h2>
@@ -596,102 +596,102 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
 
             <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6 custom-scrollbar">
               <form id="matrix-form" onSubmit={handleSubmit} className="space-y-8">
-                
+
                 {/* Identificación */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                   <div className="col-span-1 space-y-2">
-                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Código <span className="text-rose-500">*</span></label>
-                      <input 
-                        type="text" 
-                        placeholder="ID..." 
-                        className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" 
-                        value={formData.codigo} 
-                        required
-                        onChange={(e) => {
-                          const val = e.target.value
-                          handleInputChange('codigo', val)
-                          // Buscar producto por código automáticamente
-                          const found = initialData.find(p => p.codigo === val)
-                          if (found) {
-                            setFormData(prev => ({
-                              ...prev,
-                              producto_id: found.producto_id || '',
-                              nombre: found.nombre_producto || '',
-                              laboratorio_id: found.laboratorio_id || '',
-                              seccion: found.seccion || ''
-                            }))
-                          }
-                        }}
-                      />
-                   </div>
-                   <div className="col-span-1 md:col-span-2 space-y-2">
-                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Nombre del Medicamento <span className="text-rose-500">*</span></label>
-                      <input 
-                        type="text" 
-                        placeholder="Escribir nombre..." 
-                        className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" 
-                        value={formData.nombre} 
-                        onChange={(e) => handleInputChange('nombre', e.target.value)} 
-                        required 
-                      />
-                   </div>
-                    <div className="col-span-1 md:col-span-3 space-y-2 pt-2 border-t border-slate-100">
-                       <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Principio Activo (Molécula)</label>
-                       <input 
-                         type="text" 
-                         placeholder="Ej. Acetaminofén, Ibuprofeno..." 
-                         className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" 
-                         value={formData.principio_activo} 
-                         onChange={(e) => handleInputChange('principio_activo', e.target.value)} 
-                       />
-                       <p className="text-[10px] font-medium text-slate-500 italic mt-1">Corresponde a la molécula principal (ej. Acetaminofén) para diferenciar del nombre de marca (Dolex).</p>
-                    </div>
+                  <div className="col-span-1 space-y-2">
+                    <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Código <span className="text-rose-500">*</span></label>
+                    <input
+                      type="text"
+                      placeholder="ID..."
+                      className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm"
+                      value={formData.codigo}
+                      required
+                      onChange={(e) => {
+                        const val = e.target.value
+                        handleInputChange('codigo', val)
+                        // Buscar producto por código automáticamente
+                        const found = initialData.find(p => p.codigo === val)
+                        if (found) {
+                          setFormData(prev => ({
+                            ...prev,
+                            producto_id: found.producto_id || '',
+                            nombre: found.nombre_producto || '',
+                            laboratorio_id: found.laboratorio_id || '',
+                            seccion: found.seccion || ''
+                          }))
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="col-span-1 md:col-span-2 space-y-2">
+                    <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Nombre del Medicamento <span className="text-rose-500">*</span></label>
+                    <input
+                      type="text"
+                      placeholder="Escribir nombre..."
+                      className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm"
+                      value={formData.nombre}
+                      onChange={(e) => handleInputChange('nombre', e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="col-span-1 md:col-span-3 space-y-2 pt-2 border-t border-slate-100">
+                    <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Principio Activo (Molécula)</label>
+                    <input
+                      type="text"
+                      placeholder="Ej. Acetaminofén, Ibuprofeno..."
+                      className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm"
+                      value={formData.principio_activo}
+                      onChange={(e) => handleInputChange('principio_activo', e.target.value)}
+                    />
+                    <p className="text-[10px] font-medium text-slate-500 italic mt-1">Corresponde a la molécula principal (ej. Acetaminofén) para diferenciar del nombre de marca (Dolex).</p>
+                  </div>
                 </div>
 
                 {/* Sección y Laboratorio */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                   <div className="space-y-2">
-                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex justify-between items-center">
-                        <span>Laboratorio <span className="text-rose-500">*</span></span>
-                        {!isAddingLab && (
-                          <button type="button" onClick={() => setIsAddingLab(true)} className="text-indigo-600 hover:underline">+ Nuevo</button>
-                        )}
-                      </label>
-                      {isAddingLab ? (
-                        <div className="flex gap-2">
-                          <input type="text" className="flex-1 p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={newLabName} onChange={e => setNewLabName(e.target.value)} placeholder="Nombre..." />
-                          <button type="button" onClick={handleAddLab} className="p-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"><Check className="w-4 h-4"/></button>
-                          <button type="button" onClick={() => setIsAddingLab(false)} className="p-3 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors shadow-sm"><Plus className="w-4 h-4 rotate-45"/></button>
-                        </div>
-                      ) : (
-                        <select required className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.laboratorio_id} onChange={e => handleInputChange('laboratorio_id', e.target.value)}>
-                           <option value="">Seleccionar Laboratorio...</option>
-                           {localLabs.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
-                        </select>
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex justify-between items-center">
+                      <span>Laboratorio <span className="text-rose-500">*</span></span>
+                      {!isAddingLab && (
+                        <button type="button" onClick={() => setIsAddingLab(true)} className="text-indigo-600 hover:underline">+ Nuevo</button>
                       )}
-                   </div>
-                   <div className="space-y-2">
-                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Sección / Categoría <span className="text-rose-500">*</span></label>
-                      <select required className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.seccion} onChange={e => handleInputChange('seccion', e.target.value)}>
-                         <option value="">Seleccionar Sección...</option>
-                         {SECCIONES.map(s => <option key={s} value={s}>{s}</option>)}
+                    </label>
+                    {isAddingLab ? (
+                      <div className="flex gap-2">
+                        <input type="text" className="flex-1 p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={newLabName} onChange={e => setNewLabName(e.target.value)} placeholder="Nombre..." />
+                        <button type="button" onClick={handleAddLab} className="p-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"><Check className="w-4 h-4" /></button>
+                        <button type="button" onClick={() => setIsAddingLab(false)} className="p-3 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors shadow-sm"><Plus className="w-4 h-4 rotate-45" /></button>
+                      </div>
+                    ) : (
+                      <select required className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.laboratorio_id} onChange={e => handleInputChange('laboratorio_id', e.target.value)}>
+                        <option value="">Seleccionar Laboratorio...</option>
+                        {localLabs.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
                       </select>
-                   </div>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Sección / Categoría <span className="text-rose-500">*</span></label>
+                    <select required className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.seccion} onChange={e => handleInputChange('seccion', e.target.value)}>
+                      <option value="">Seleccionar Sección...</option>
+                      {SECCIONES.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                   <div className="space-y-2">
-                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Lote No.</label>
-                      <input type="text" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.lote} onChange={e => handleInputChange('lote', e.target.value)} placeholder="Ej: L9082..." />
-                   </div>
-                   <div className="space-y-2">
-                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Reg. INVIMA</label>
-                      <input type="text" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.registro_invima} onChange={e => handleInputChange('registro_invima', e.target.value)} placeholder="Ej: 2023M..." />
-                   </div>
-                   <div className="space-y-2">
-                      <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Vencimiento <span className="text-rose-500">*</span></label>
-                      <input type="date" required className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.fecha_vencimiento} onChange={e => handleInputChange('fecha_vencimiento', e.target.value)} />
-                   </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Lote No.</label>
+                    <input type="text" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.lote} onChange={e => handleInputChange('lote', e.target.value)} placeholder="Ej: L9082..." />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Reg. INVIMA</label>
+                    <input type="text" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.registro_invima} onChange={e => handleInputChange('registro_invima', e.target.value)} placeholder="Ej: 2023M..." />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Vencimiento <span className="text-rose-500">*</span></label>
+                    <input type="date" required className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.fecha_vencimiento} onChange={e => handleInputChange('fecha_vencimiento', e.target.value)} />
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -703,7 +703,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                   <input type="checkbox" id="esProductoUnico" className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 border-indigo-300 cursor-pointer" checked={esProductoUnico} onChange={(e) => {
                     setEsProductoUnico(e.target.checked);
                     if (e.target.checked) {
-                      setFormData(prev => ({...prev, blisters_por_caja: 1, unidades_por_blister: 1, blisters: 0, unidades: 0}));
+                      setFormData(prev => ({ ...prev, blisters_por_caja: 1, unidades_por_blister: 1, blisters: 0, unidades: 0 }));
                     }
                   }} />
                   <label htmlFor="esProductoUnico" className="text-sm font-semibold text-indigo-900 cursor-pointer">
@@ -714,108 +714,108 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                 {/* Matriz de Conversión */}
                 {!esProductoUnico && (
                   <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 space-y-4">
-                     <div className="flex items-center gap-2 text-slate-700 font-semibold uppercase text-xs tracking-wide"><Calculator className="w-4 h-4" /> Matriz de Empaque</div>
-                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <NumericInput 
-                          label="Blísters por Caja" 
-                          min={0} 
-                          value={formData.blisters_por_caja} 
-                          onChange={(v: number) => setFormData({...formData, blisters_por_caja: v})} 
-                        />
-                        <NumericInput 
-                          label="Unidades por Blíster" 
-                          min={0} 
-                          value={formData.unidades_por_blister} 
-                          onChange={(v: number) => setFormData({...formData, unidades_por_blister: v})} 
-                        />
-                     </div>
+                    <div className="flex items-center gap-2 text-slate-700 font-semibold uppercase text-xs tracking-wide"><Calculator className="w-4 h-4" /> Matriz de Empaque</div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <NumericInput
+                        label="Blísters por Caja"
+                        min={0}
+                        value={formData.blisters_por_caja}
+                        onChange={(v: number) => setFormData({ ...formData, blisters_por_caja: v })}
+                      />
+                      <NumericInput
+                        label="Unidades por Blíster"
+                        min={0}
+                        value={formData.unidades_por_blister}
+                        onChange={(v: number) => setFormData({ ...formData, unidades_por_blister: v })}
+                      />
+                    </div>
                   </div>
                 )}
 
                 {/* Existencias */}
                 <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 space-y-4">
-                   <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide flex items-center gap-2"><Package className="w-4 h-4"/> Conteo Físico</p>
-                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      {[ {l: esProductoUnico ? 'Cantidad Total' : 'Cajas', k:'cajas'}, 
-                         ...(!esProductoUnico ? [{l:'Blísters',k:'blisters'}, {l:'Unidades',k:'unidades'}] : []) 
-                      ].map((x, i) => (
-                        <NumericInput 
-                          key={i} 
-                          label={x.l} 
-                          value={(formData as any)[x.k]} 
-                          min={0}
-                          onChange={(v: number) => setFormData({...formData, [x.k]: v})} 
-                        />
-                      ))}
-                   </div>
+                  <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide flex items-center gap-2"><Package className="w-4 h-4" /> Conteo Físico</p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {[{ l: esProductoUnico ? 'Cantidad Total' : 'Cajas', k: 'cajas' },
+                    ...(!esProductoUnico ? [{ l: 'Blísters', k: 'blisters' }, { l: 'Unidades', k: 'unidades' }] : [])
+                    ].map((x, i) => (
+                      <NumericInput
+                        key={i}
+                        label={x.l}
+                        value={(formData as any)[x.k]}
+                        min={0}
+                        onChange={(v: number) => setFormData({ ...formData, [x.k]: v })}
+                      />
+                    ))}
+                  </div>
 
-                   <div className="pt-4 mt-4 border-t border-slate-200">
-                     <div className="md:w-1/3 space-y-2">
-                       <NumericInput 
-                         min={0} 
-                         value={formData.stock_minimo} 
-                         onChange={(v: number) => setFormData({...formData, stock_minimo: v})} 
-                         inputClass="w-full p-3 bg-amber-50/30 border border-amber-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-amber-600/20 focus:border-amber-600 outline-none transition-all shadow-sm"
-                       >
-                         <label className="text-xs font-bold text-amber-600 uppercase flex items-center gap-2 mb-2">
-                           <AlertCircle className="w-4 h-4"/> Stock Mínimo (Alerta)
-                         </label>
-                       </NumericInput>
-                       <p className="text-[10px] text-slate-500 font-medium leading-tight mt-1">El sistema generará una alerta en rojo cuando el inventario caiga a este número de cajas/unidades.</p>
-                     </div>
-                   </div>
+                  <div className="pt-4 mt-4 border-t border-slate-200">
+                    <div className="md:w-1/3 space-y-2">
+                      <NumericInput
+                        min={0}
+                        value={formData.stock_minimo}
+                        onChange={(v: number) => setFormData({ ...formData, stock_minimo: v })}
+                        inputClass="w-full p-3 bg-amber-50/30 border border-amber-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-amber-600/20 focus:border-amber-600 outline-none transition-all shadow-sm"
+                      >
+                        <label className="text-xs font-bold text-amber-600 uppercase flex items-center gap-2 mb-2">
+                          <AlertCircle className="w-4 h-4" /> Stock Mínimo (Alerta)
+                        </label>
+                      </NumericInput>
+                      <p className="text-[10px] text-slate-500 font-medium leading-tight mt-1">El sistema generará una alerta en rojo cuando el inventario caiga a este número de cajas/unidades.</p>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Precios */}
                 <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 space-y-6">
-                   <NumericInput 
-                     label={esProductoUnico ? "Costo Adquisición" : "Costo Adquisición (Caja) *"} 
-                     required 
-                     step="0.01" 
-                     value={formData.precio_caja} 
-                     onChange={(v: number) => setFormData({...formData, precio_caja: v})} 
-                   />
+                  <NumericInput
+                    label={esProductoUnico ? "Costo Adquisición" : "Costo Adquisición (Caja) *"}
+                    required
+                    step="0.01"
+                    value={formData.precio_caja}
+                    onChange={(v: number) => setFormData({ ...formData, precio_caja: v })}
+                  />
 
-                   <div className={`grid grid-cols-1 md:grid-cols-${esProductoUnico ? '1' : '3'} gap-6`}>
-                      {[ 
-                        {l: esProductoUnico ? 'PVP Final' : 'PVP Caja', v:formData.precio_caja, m:formData.porcentaje_ganancia, mk: 'porcentaje_ganancia'}, 
-                        ...(!esProductoUnico ? [
-                          {l:'PVP Blíster', v:formData.precio_blister, m:formData.margen_blister, mk: 'margen_blister'}, 
-                          {l:'PVP Unidad', v:formData.precio_unidad, m:formData.margen_unidad, mk: 'margen_unidad'} 
-                        ] : [])
-                      ].map((x, i) => (
-                        <PVPInput 
-                          key={i} 
-                          label={x.l} 
-                          cost={x.v} 
-                          margin={x.m} 
-                          marginKey={x.mk} 
-                          setFormData={setFormData} 
-                          calculatePV={calculatePV} 
+                  <div className={`grid grid-cols-1 md:grid-cols-${esProductoUnico ? '1' : '3'} gap-6`}>
+                    {[
+                      { l: esProductoUnico ? 'PVP Final' : 'PVP Caja', v: formData.precio_caja, m: formData.porcentaje_ganancia, mk: 'porcentaje_ganancia' },
+                      ...(!esProductoUnico ? [
+                        { l: 'PVP Blíster', v: formData.precio_blister, m: formData.margen_blister, mk: 'margen_blister' },
+                        { l: 'PVP Unidad', v: formData.precio_unidad, m: formData.margen_unidad, mk: 'margen_unidad' }
+                      ] : [])
+                    ].map((x, i) => (
+                      <PVPInput
+                        key={i}
+                        label={x.l}
+                        cost={x.v}
+                        margin={x.m}
+                        marginKey={x.mk}
+                        setFormData={setFormData}
+                        calculatePV={calculatePV}
+                      />
+                    ))}
+                  </div>
+
+                  <div className={`grid grid-cols-1 md:grid-cols-${esProductoUnico ? '1' : '3'} gap-6`}>
+                    {[
+                      { l: esProductoUnico ? 'Margen de Ganancia %' : 'Margen Caja %', k: 'porcentaje_ganancia' },
+                      ...(!esProductoUnico ? [
+                        { l: 'Margen Blíster %', k: 'margen_blister' },
+                        { l: 'Margen Unidad %', k: 'margen_unidad' }
+                      ] : [])
+                    ].map((x, i) => (
+                      <div key={i} className="flex items-center gap-3 bg-white p-3 rounded-lg border border-slate-200">
+                        <button type="button" onClick={() => setFormData({ ...formData, [x.k]: (Number(formData[x.k as keyof typeof formData] || 0) - 1) })} className="w-8 h-8 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold transition-colors">-</button>
+                        <NumericInput
+                          value={Number(formData[x.k as keyof typeof formData] || 0)}
+                          step="0.01"
+                          onChange={(v: number) => setFormData({ ...formData, [x.k]: v })}
+                          inputClass="w-full text-center border-none focus:ring-0 text-sm font-bold text-slate-700 bg-transparent"
                         />
-                      ))}
-                   </div>
-
-                   <div className={`grid grid-cols-1 md:grid-cols-${esProductoUnico ? '1' : '3'} gap-6`}>
-                      {[ 
-                        {l: esProductoUnico ? 'Margen de Ganancia %' : 'Margen Caja %', k:'porcentaje_ganancia'}, 
-                        ...(!esProductoUnico ? [
-                          {l:'Margen Blíster %', k:'margen_blister'}, 
-                          {l:'Margen Unidad %', k:'margen_unidad'} 
-                        ] : [])
-                      ].map((x, i) => (
-                        <div key={i} className="flex items-center gap-3 bg-white p-3 rounded-lg border border-slate-200">
-                           <button type="button" onClick={() => setFormData({...formData, [x.k]: (Number(formData[x.k as keyof typeof formData] || 0) - 1)})} className="w-8 h-8 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold transition-colors">-</button>
-                           <NumericInput 
-                             value={Number(formData[x.k as keyof typeof formData] || 0)} 
-                             step="0.01"
-                             onChange={(v: number) => setFormData({...formData, [x.k]: v})} 
-                             inputClass="w-full text-center border-none focus:ring-0 text-sm font-bold text-slate-700 bg-transparent"
-                           />
-                           <button type="button" onClick={() => setFormData({...formData, [x.k]: (Number(formData[x.k as keyof typeof formData] || 0) + 1)})} className="w-8 h-8 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold transition-colors">+</button>
-                        </div>
-                      ))}
-                   </div>
+                        <button type="button" onClick={() => setFormData({ ...formData, [x.k]: (Number(formData[x.k as keyof typeof formData] || 0) + 1) })} className="w-8 h-8 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center font-bold transition-colors">+</button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </form>
             </div>
@@ -836,47 +836,47 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       {/* Historial Auditoría */}
       {showHistory && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 md:p-6 animate-in fade-in">
-           <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl p-6 md:p-10 space-y-8 animate-in zoom-in-95 border border-slate-100">
-              <div className="flex justify-between items-start border-b border-slate-100 pb-6">
-                 <div className="flex items-center gap-5">
-                    <div className="p-4 bg-indigo-50 text-indigo-600 rounded-2xl border border-indigo-100">
-                       <History className="w-8 h-8" />
+          <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl p-6 md:p-10 space-y-8 animate-in zoom-in-95 border border-slate-100">
+            <div className="flex justify-between items-start border-b border-slate-100 pb-6">
+              <div className="flex items-center gap-5">
+                <div className="p-4 bg-indigo-50 text-indigo-600 rounded-2xl border border-indigo-100">
+                  <History className="w-8 h-8" />
+                </div>
+                <div>
+                  <h2 className="text-2xl md:text-3xl font-bold text-slate-800 tracking-tight">Bitácora de Auditoría</h2>
+                  <p className="text-slate-500 text-sm font-medium mt-1">Trazabilidad y control de cambios</p>
+                </div>
+              </div>
+              <button onClick={() => setShowHistory(false)} className="p-3 text-slate-400 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 hover:text-slate-700 transition-colors">
+                <Plus className="w-6 h-6 rotate-45" />
+              </button>
+            </div>
+            <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-2 custom-scrollbar">
+              {realHistory.length > 0 ? realHistory.map((log, i) => (
+                <div key={i} className="flex gap-6 p-6 bg-slate-50/80 hover:bg-white rounded-2xl border border-slate-200 hover:border-indigo-100 transition-all shadow-sm hover:shadow-md relative overflow-hidden group">
+                  <div className={`absolute left-0 top-0 bottom-0 w-1.5 transition-all ${log.accion === 'ENTRADA' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                  <div className="flex-1 pl-2">
+                    <div className="flex justify-between items-start mb-2">
+                      <p className="text-xs font-semibold text-slate-400">{format(parseISO(log.created_at), 'dd MMM yyyy, hh:mm a', { locale: es })}</p>
+                      <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold ${log.accion === 'ENTRADA' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-amber-100 text-amber-700 border border-amber-200'}`}>{log.accion}</span>
                     </div>
-                    <div>
-                       <h2 className="text-2xl md:text-3xl font-bold text-slate-800 tracking-tight">Bitácora de Auditoría</h2>
-                       <p className="text-slate-500 text-sm font-medium mt-1">Trazabilidad y control de cambios</p>
-                    </div>
-                 </div>
-                 <button onClick={() => setShowHistory(false)} className="p-3 text-slate-400 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 hover:text-slate-700 transition-colors">
-                    <Plus className="w-6 h-6 rotate-45" />
-                 </button>
-              </div>
-              <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-2 custom-scrollbar">
-                 {realHistory.length > 0 ? realHistory.map((log, i) => (
-                   <div key={i} className="flex gap-6 p-6 bg-slate-50/80 hover:bg-white rounded-2xl border border-slate-200 hover:border-indigo-100 transition-all shadow-sm hover:shadow-md relative overflow-hidden group">
-                      <div className={`absolute left-0 top-0 bottom-0 w-1.5 transition-all ${log.accion === 'ENTRADA' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                      <div className="flex-1 pl-2">
-                         <div className="flex justify-between items-start mb-2">
-                            <p className="text-xs font-semibold text-slate-400">{format(parseISO(log.created_at), 'dd MMM yyyy, hh:mm a', { locale: es })}</p>
-                            <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold ${log.accion === 'ENTRADA' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-amber-100 text-amber-700 border border-amber-200'}`}>{log.accion}</span>
-                         </div>
-                         <p className="text-base font-bold text-slate-700 mb-1">Operador: <span className="font-semibold text-indigo-600">{log.operador ? log.operador.split('@')[0] : 'Sistema'}</span></p>
-                         <p className="text-sm text-slate-500 leading-relaxed">{log.detalles}</p>
-                      </div>
-                   </div>
-                 )) : (
-                   <div className="text-center py-16 bg-slate-50 rounded-2xl border border-dashed border-slate-300">
-                      <Info className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                      <p className="text-slate-500 font-medium">No hay registros de auditoría para este producto.</p>
-                   </div>
-                 )}
-              </div>
-              <div className="pt-4 border-t border-slate-100">
-                 <button onClick={() => setShowHistory(false)} className="w-full bg-slate-800 hover:bg-slate-900 text-white p-4 rounded-xl text-sm font-bold shadow-md transition-colors flex items-center justify-center gap-2">
-                    Cerrar Bitácora
-                 </button>
-              </div>
-           </div>
+                    <p className="text-base font-bold text-slate-700 mb-1">Operador: <span className="font-semibold text-indigo-600">{log.operador ? log.operador.split('@')[0] : 'Sistema'}</span></p>
+                    <p className="text-sm text-slate-500 leading-relaxed">{log.detalles}</p>
+                  </div>
+                </div>
+              )) : (
+                <div className="text-center py-16 bg-slate-50 rounded-2xl border border-dashed border-slate-300">
+                  <Info className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                  <p className="text-slate-500 font-medium">No hay registros de auditoría para este producto.</p>
+                </div>
+              )}
+            </div>
+            <div className="pt-4 border-t border-slate-100">
+              <button onClick={() => setShowHistory(false)} className="w-full bg-slate-800 hover:bg-slate-900 text-white p-4 rounded-xl text-sm font-bold shadow-md transition-colors flex items-center justify-center gap-2">
+                Cerrar Bitácora
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
