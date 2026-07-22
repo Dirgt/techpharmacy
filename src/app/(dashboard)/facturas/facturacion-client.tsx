@@ -235,29 +235,48 @@ export function FacturacionClient({
   const addToCart = (product: any) => {
     setCart(prev => {
       const existing = prev.find(item => item.producto_id === product.producto_id)
+      
       if (existing) {
-        // Increment unidades by default
         return prev.map(item => {
           if (item.producto_id === product.producto_id) {
-            const newUnidades = item.cantidad_unidades + 1
-            const newPrice = calculateLinePrice(product, item.cantidad_cajas, item.cantidad_blisters, newUnidades)
-            return { ...item, cantidad_unidades: newUnidades, precio_linea: newPrice }
+            let fieldToIncrement: 'cantidad_unidades' | 'cantidad_blisters' | 'cantidad_cajas' | null = null
+            if (item.cantidad_unidades < (product.unidades || 0)) fieldToIncrement = 'cantidad_unidades'
+            else if (item.cantidad_blisters < (product.blisters || 0)) fieldToIncrement = 'cantidad_blisters'
+            else if (item.cantidad_cajas < (product.cajas || 0)) fieldToIncrement = 'cantidad_cajas'
+            
+            if (fieldToIncrement) {
+              const newVal = item[fieldToIncrement] + 1
+              const newPrice = calculateLinePrice(product, 
+                fieldToIncrement === 'cantidad_cajas' ? newVal : item.cantidad_cajas, 
+                fieldToIncrement === 'cantidad_blisters' ? newVal : item.cantidad_blisters, 
+                fieldToIncrement === 'cantidad_unidades' ? newVal : item.cantidad_unidades
+              )
+              return { ...item, [fieldToIncrement]: newVal, precio_linea: newPrice * (1 - (descuentoPct / 100)), precio_unitario_base: newPrice }
+            }
+            return item
           }
           return item
         })
       }
 
-      // Add new item
+      let defUnidades = 0, defBlisters = 0, defCajas = 0
+      if ((product.unidades || 0) > 0) defUnidades = 1
+      else if ((product.blisters || 0) > 0) defBlisters = 1
+      else if ((product.cajas || 0) > 0) defCajas = 1
+      else defCajas = 1 // Fallback
+
+      const basePrice = calculateLinePrice(product, defCajas, defBlisters, defUnidades)
+
       const newItem: FacturaItem = {
         producto_id: product.producto_id,
         nombre: product.nombre_producto,
-        cantidad_cajas: 0,
-        cantidad_blisters: 0,
-        cantidad_unidades: 1, 
-        precio_unitario_base: Number(product.precio_unidad || 0),
+        cantidad_cajas: defCajas,
+        cantidad_blisters: defBlisters,
+        cantidad_unidades: defUnidades, 
+        precio_unitario_base: basePrice,
         descuento_porcentaje: descuentoPct,
-        precio_linea: Number(product.precio_unidad || 0) * (1 - (descuentoPct / 100)),
-        precio_linea_original: Number(product.precio_unidad || 0)
+        precio_linea: basePrice * (1 - (descuentoPct / 100)),
+        precio_linea_original: basePrice
       }
       return [...prev, newItem]
     })
@@ -551,14 +570,21 @@ export function FacturacionClient({
                       <div className="flex items-center gap-1 shrink-0">
                         {(['cantidad_cajas', 'cantidad_blisters', 'cantidad_unidades'] as const).map((field, idx) => {
                           const labels = ['CAJA', 'BLÍSTER', 'UNIDAD']
+                          const stockFields = ['cajas', 'blisters', 'unidades']
+                          const stockVal = stockInfo ? (stockInfo[stockFields[idx] as any] || 0) : 0
                           const val = item[field]
+                          
+                          // Deshabilitar visualmente si el inventario de esta presentación es 0
+                          const isZeroStock = stockVal === 0
+                          const maxReached = val >= stockVal
+
                           return (
-                            <div key={field} className="flex flex-col items-center gap-0.5">
+                            <div key={field} className={`flex flex-col items-center gap-0.5 ${isZeroStock && val === 0 ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
                               <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{labels[idx]}</span>
                               <div className="flex items-center bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
-                                <button onClick={() => updateQuantity(item.producto_id, field, val - 1)} className="p-1.5 hover:bg-slate-100 transition-colors text-slate-700"><Minus className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => updateQuantity(item.producto_id, field, val - 1)} disabled={val <= 0} className="p-1.5 hover:bg-slate-100 transition-colors text-slate-700 disabled:opacity-30"><Minus className="w-3.5 h-3.5" /></button>
                                 <span className="w-6 text-center text-sm font-black text-slate-900">{val}</span>
-                                <button onClick={() => updateQuantity(item.producto_id, field, val + 1)} className="p-1.5 hover:bg-slate-100 transition-colors text-slate-700"><Plus className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => updateQuantity(item.producto_id, field, val + 1)} disabled={maxReached} className="p-1.5 hover:bg-slate-100 transition-colors text-slate-700 disabled:opacity-30"><Plus className="w-3.5 h-3.5" /></button>
                               </div>
                             </div>
                           )

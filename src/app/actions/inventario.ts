@@ -152,6 +152,8 @@ export async function upsertInventario(rawData: UpsertInventarioInput) {
     return { success: false, error: error.message }
   }
 
-  revalidatePath('/inventario')
+  // Refrescar toda la aplicación para que el módulo de Facturación (POS) tenga el stock más reciente
+  revalidatePath('/', 'layout')
+  
   return { success: true, data: upserted }
 }
