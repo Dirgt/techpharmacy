@@ -24,7 +24,12 @@ import {
 import { 
   UsersIcon, 
   UserPlus,
-  Settings
+  Settings,
+  User,
+  Mail,
+  KeyRound,
+  ShieldCheck,
+  UserCheck
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
@@ -135,72 +140,96 @@ export function UserClient({ initialUsers }: UserClientProps) {
               Nuevo Usuario
             </Button>
           </DialogTrigger>
-          <DialogContent className="bg-white border-slate-200 text-slate-900 max-w-md rounded-3xl p-8 shadow-2xl">
-            <DialogHeader>
-              <DialogTitle className="text-2xl font-black">Registrar Empleado</DialogTitle>
-              <DialogDescription className="text-slate-500 font-medium pt-1">
-                Completa los datos para crear una nueva cuenta.
-              </DialogDescription>
+          <DialogContent className="bg-white border-slate-100 text-slate-900 sm:max-w-xl md:max-w-2xl rounded-3xl p-6 sm:p-8 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="border-b border-slate-100 pb-5">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-100 text-emerald-600">
+                  <UserPlus className="w-6 h-6" />
+                </div>
+                <div>
+                  <DialogTitle className="text-2xl font-black tracking-tight text-slate-900">Registrar Empleado</DialogTitle>
+                  <DialogDescription className="text-slate-500 font-medium text-xs pt-1">
+                    Gestión de credenciales y asignación de perfil corporativo.
+                  </DialogDescription>
+                </div>
+              </div>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-6 pt-6">
-              <div className="grid gap-6">
-                <div className="grid grid-cols-1 gap-4">
-                  <div className="space-y-2">
-                    <Label className="font-bold text-slate-700 ml-1">Nombre Completo</Label>
-                    <Input name="full_name" required className="bg-slate-50 border-slate-200 rounded-xl py-6 focus:ring-emerald-500" placeholder="Ej: Juan Pérez" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="font-bold text-slate-700 ml-1">Nombre de Usuario</Label>
-                    <Input name="username" required className="bg-slate-50 border-slate-200 rounded-xl py-6 focus:ring-emerald-500" placeholder="Ej: jperez" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 gap-4">
-                  <div className="space-y-2">
-                    <Label className="font-bold text-slate-700 ml-1">Correo Electrónico</Label>
-                    <Input name="email" type="email" required className="bg-slate-50 border-slate-200 rounded-xl py-6 focus:ring-emerald-500" placeholder="correo@ejemplo.com" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="font-bold text-slate-700 ml-1">Contraseña</Label>
-                    <Input 
-                      name="password" 
-                      type="password" 
-                      required 
-                      className="bg-slate-50 border-slate-200 rounded-xl py-6 focus:ring-emerald-500" 
-                      placeholder="******"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                    />
-                    {password && (
-                      <div className="space-y-1.5 mt-3 px-1">
-                        <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                          <div 
-                            className={`h-full transition-all duration-500 ${getStrengthColor(strength)}`} 
-                            style={{ width: `${strength}%` }}
-                          />
-                        </div>
-                        <p className="text-[10px] text-slate-400 uppercase tracking-widest font-black">
-                          Seguridad: <span className={strength > 50 ? 'text-emerald-600' : 'text-amber-500'}>{strength <= 50 ? 'Baja' : strength <= 75 ? 'Media' : 'Alta'}</span>
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
+
+            <form onSubmit={handleSubmit} className="space-y-6 pt-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 <div className="space-y-2">
-                  <Label className="font-bold text-slate-700 ml-1">Rol en la Farmacia</Label>
+                  <Label className="font-bold text-xs uppercase tracking-wider text-slate-600 flex items-center gap-1.5 ml-1">
+                    <User className="w-3.5 h-3.5 text-emerald-600" /> Nombre Completo *
+                  </Label>
+                  <Input name="full_name" required className="bg-slate-50/70 border-slate-200 rounded-xl h-12 text-sm font-semibold focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600" placeholder="Ej. Juan Carlos Pérez" />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="font-bold text-xs uppercase tracking-wider text-slate-600 flex items-center gap-1.5 ml-1">
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-600" /> Nombre de Usuario *
+                  </Label>
+                  <Input name="username" required className="bg-slate-50/70 border-slate-200 rounded-xl h-12 text-sm font-semibold focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600" placeholder="Ej. jperez" />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="font-bold text-xs uppercase tracking-wider text-slate-600 flex items-center gap-1.5 ml-1">
+                    <Mail className="w-3.5 h-3.5 text-emerald-600" /> Correo Electrónico *
+                  </Label>
+                  <Input name="email" type="email" required className="bg-slate-50/70 border-slate-200 rounded-xl h-12 text-sm font-semibold focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600" placeholder="juan.perez@farmacia.com" />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="font-bold text-xs uppercase tracking-wider text-slate-600 flex items-center gap-1.5 ml-1">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Rol en Sistema *
+                  </Label>
                   <Select name="role" defaultValue="vendedor">
-                    <SelectTrigger className="bg-slate-50 border-slate-200 rounded-xl py-6">
+                    <SelectTrigger className="bg-slate-50/70 border-slate-200 rounded-xl h-12 text-sm font-semibold focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600">
                       <SelectValue placeholder="Seleccionar rol" />
                     </SelectTrigger>
-                    <SelectContent className="bg-white border-slate-200">
-                      <SelectItem value="admin" className="focus:bg-emerald-50 py-3">Administrador</SelectItem>
-                      <SelectItem value="vendedor" className="focus:bg-emerald-50 py-3">Vendedor / Farmacéutico</SelectItem>
+                    <SelectContent className="bg-white border-slate-200 shadow-xl rounded-xl">
+                      <SelectItem value="admin" className="focus:bg-emerald-50 py-3 font-semibold">Administrador General</SelectItem>
+                      <SelectItem value="vendedor" className="focus:bg-emerald-50 py-3 font-semibold">Vendedor / Farmacéutico</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+
+                <div className="sm:col-span-2 space-y-2">
+                  <Label className="font-bold text-xs uppercase tracking-wider text-slate-600 flex items-center gap-1.5 ml-1">
+                    <KeyRound className="w-3.5 h-3.5 text-emerald-600" /> Contraseña de Acceso *
+                  </Label>
+                  <Input 
+                    name="password" 
+                    type="password" 
+                    required 
+                    className="bg-slate-50/70 border-slate-200 rounded-xl h-12 text-sm font-semibold focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600" 
+                    placeholder="Mínimo 6 caracteres"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                  {password && (
+                    <div className="space-y-1.5 mt-2 px-1">
+                      <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full transition-all duration-500 ${getStrengthColor(strength)}`} 
+                          style={{ width: `${strength}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] text-slate-400 uppercase tracking-widest font-black">
+                        Nivel de Seguridad: <span className={strength > 50 ? 'text-emerald-600' : 'text-amber-500'}>{strength <= 50 ? 'Baja' : strength <= 75 ? 'Media' : 'Alta (Recomendada)'}</span>
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
-              <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl py-7 text-lg font-bold shadow-xl shadow-emerald-600/20" disabled={loading}>
-                {loading ? 'Creando...' : 'Finalizar Registro'}
-              </Button>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+                <Button type="button" variant="outline" className="rounded-xl h-12 px-6 font-bold text-slate-600 border-slate-200 hover:bg-slate-50" onClick={() => setIsCreateDialogOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl h-12 px-8 font-bold shadow-lg shadow-emerald-600/20 transition-all active:scale-95" disabled={loading}>
+                  {loading ? 'Creando Usuario...' : 'Guardar y Crear Cuenta'}
+                </Button>
+              </div>
             </form>
           </DialogContent>
         </Dialog>

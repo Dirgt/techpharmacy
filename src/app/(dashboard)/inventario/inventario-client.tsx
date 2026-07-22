@@ -401,7 +401,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
         ].map((item, i) => (
           <button 
             key={i} 
-            onClick={() => setFilterType(item.filter)}
+            onClick={() => setFilterType(filterType === item.filter ? 'todos' : item.filter)}
             className={`text-left p-5 lg:p-6 rounded-[2rem] lg:rounded-[2.5rem] border transition-all relative group h-full flex flex-col justify-between ${filterType === item.filter && item.filter !== 'todos' ? 'border-indigo-500 ring-[8px] ring-indigo-500/5 bg-white shadow-xl' : 'bg-white border-slate-100 hover:shadow-xl hover:-translate-y-1'}`}
           >
             <div className="flex flex-col items-start gap-4 mb-6 w-full">
@@ -423,8 +423,25 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
         ))}
       </div>
 
+      {filterType !== 'todos' && (
+        <div className="flex items-center justify-between bg-indigo-50 border border-indigo-100 px-6 py-3 rounded-2xl animate-in fade-in duration-200">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-indigo-600 animate-ping" />
+            <p className="text-xs font-bold text-indigo-900">
+              Filtro activo: <span className="uppercase font-black text-indigo-700">{filterType.replace('_', ' ')}</span> ({filteredData.length} resultados)
+            </p>
+          </div>
+          <button 
+            onClick={() => setFilterType('todos')}
+            className="text-xs font-black text-indigo-600 hover:text-indigo-800 bg-white px-3 py-1.5 rounded-xl border border-indigo-200 shadow-sm transition-all active:scale-95"
+          >
+            Quitar Filtro ✕
+          </button>
+        </div>
+      )}
+
       {/* BARRA DE ACCIÓN SUPREMA */}
-      <div className="bg-white/90 backdrop-blur-3xl p-4 lg:p-6 rounded-[3rem] lg:rounded-[4rem] border border-slate-100 shadow-2xl flex flex-col xl:flex-row gap-4 lg:gap-6 items-center sticky top-6 z-40">
+      <div className="bg-white/90 backdrop-blur-3xl p-4 lg:p-6 rounded-[3rem] lg:rounded-[4rem] border border-slate-100 shadow-xl flex flex-col xl:flex-row gap-4 lg:gap-6 items-center relative z-10">
         <div className="relative flex-1 group w-full">
           <Search className="absolute left-6 lg:left-8 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 w-5 h-5 lg:w-6 lg:h-6 transition-colors" />
           <input 
