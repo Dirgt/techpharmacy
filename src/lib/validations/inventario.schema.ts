@@ -17,9 +17,9 @@ export const UpsertInventarioSchema = z.object({
   precio_blister: z.number().min(0).default(0),
   precio_unidad: z.number().min(0).default(0),
   
-  porcentaje_ganancia: z.number().min(0).default(0),
-  margen_blister: z.number().min(0).default(0),
-  margen_unidad: z.number().min(0).default(0),
+  porcentaje_ganancia: z.number().default(0),
+  margen_blister: z.number().default(0),
+  margen_unidad: z.number().default(0),
   
   lote: z.string().optional().nullable(),
   registro_invima: z.string().optional().nullable(),
