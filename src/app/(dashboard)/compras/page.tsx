@@ -1,9 +1,13 @@
+import { redirect } from 'next/navigation'
+import { requireAdmin } from '@/lib/auth/session'
 import { getCompras, getProveedores } from '@/app/actions/tesoreria'
 import { getProductos } from '@/app/actions/inventario'
 import { getSesionCajaAbierta } from '@/app/actions/caja'
 import ComprasClient from './compras-client'
 
 export default async function ComprasPage() {
+  const auth = await requireAdmin()
+  if (!auth.ok) redirect('/dashboard')
   const [comprasRes, proveedoresRes, productosRes, cajaRes] = await Promise.all([
     getCompras(),
     getProveedores(),

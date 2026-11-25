@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -23,19 +24,26 @@ import {
 } from "@/components/ui/select"
 import { Database } from '@/lib/supabase/database.types'
 
-export function GastoModal({ cajaAbierta }: { cajaAbierta: Database['public']['Tables']['caja_sesiones']['Row'] | null }) {
+export function GastoModal({
+  cajaAbierta,
+  onGastoRegistrado,
+}: {
+  cajaAbierta: Database['public']['Tables']['caja_sesiones']['Row'] | null
+  onGastoRegistrado?: () => void
+}) {
+  const router = useRouter()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   
   const [concepto, setConcepto] = useState('')
   const [monto, setMonto] = useState('')
-  const [tipo, setTipo] = useState('operativo')
+  const [tipo, setTipo] = useState<'caja_chica' | 'operativo' | 'nomina'>('operativo')
   const [comprobante, setComprobante] = useState('')
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!cajaAbierta || cajaAbierta.estado !== 'abierta') {
+    if (!cajaAbierta || !['abierta', 'abierto'].includes(cajaAbierta.estado || '')) {
       return toast.error('La caja no está abierta.')
     }
     
@@ -45,7 +53,7 @@ export function GastoModal({ cajaAbierta }: { cajaAbierta: Database['public']['T
       caja_sesion_id: cajaAbierta.id,
       concepto,
       monto: parseFloat(monto),
-      tipo: tipo as any,
+      tipo,
       comprobante: comprobante || undefined
     })
 
@@ -57,6 +65,8 @@ export function GastoModal({ cajaAbierta }: { cajaAbierta: Database['public']['T
       setMonto('')
       setTipo('operativo')
       setComprobante('')
+      onGastoRegistrado?.()
+      router.refresh()
     } else {
       toast.error(result.error || 'Error al registrar el gasto')
     }
@@ -121,7 +131,7 @@ export function GastoModal({ cajaAbierta }: { cajaAbierta: Database['public']['T
 
             <div className="space-y-2">
               <Label>Tipo de Gasto</Label>
-              <Select value={tipo} onValueChange={setTipo}>
+              <Select value={tipo} onValueChange={(v) => setTipo(v as 'caja_chica' | 'operativo' | 'nomina')}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>

@@ -1,18 +1,36 @@
 'use client'
 
 import { useMemo } from 'react'
-import { DollarSign, Receipt, TrendingDown, TrendingUp, Wallet, Activity, ArrowDownRight, ArrowUpRight, BarChart3, PieChart } from 'lucide-react'
+import { TrendingDown, TrendingUp, Wallet, Activity, ArrowDownRight, ArrowUpRight, BarChart3, PieChart } from 'lucide-react'
 import { IngresosGastosChart } from '@/components/reportes/ingresos-gastos-chart'
 import { TopProductosChart } from '@/components/reportes/top-productos-chart'
+import { formatCurrency } from '@/lib/utils'
+
+interface ReporteFactura {
+  total: number | null
+  metodo_pago: string | null
+  estado_pago: string | null
+}
+
+interface ReporteCompra {
+  total: number | null
+  metodo_pago: string | null
+  estado_pago: string | null
+}
+
+interface ReporteGasto {
+  monto: number | null
+  tipo: string | null
+}
 
 export default function ReportesClient({ 
   reporte, 
   chartData, 
   topData 
 }: { 
-  reporte: { facturas: any[], compras: any[], gastos: any[] },
-  chartData: any[],
-  topData: any[]
+  reporte: { facturas: ReporteFactura[], compras: ReporteCompra[], gastos: ReporteGasto[] },
+  chartData: { fecha: string, ingresos: number, gastos: number }[],
+  topData: { name: string, ventas: number }[]
 }) {
   const { facturas, compras, gastos } = reporte
 
@@ -74,7 +92,7 @@ export default function ReportesClient({
                 <TrendingUp className="w-5 h-5 text-white" />
               </div>
             </div>
-            <span className="text-4xl font-black tracking-tighter">${finanzas.totalIngresos.toLocaleString()}</span>
+            <span className="text-4xl font-black tracking-tighter">{formatCurrency(finanzas.totalIngresos)}</span>
           </div>
         </div>
 
@@ -88,7 +106,7 @@ export default function ReportesClient({
                 <TrendingDown className="w-5 h-5 text-white" />
               </div>
             </div>
-            <span className="text-4xl font-black tracking-tighter">${finanzas.totalEgresos.toLocaleString()}</span>
+            <span className="text-4xl font-black tracking-tighter">{formatCurrency(finanzas.totalEgresos)}</span>
           </div>
         </div>
 
@@ -101,7 +119,7 @@ export default function ReportesClient({
             </div>
           </div>
           <span className={`text-4xl font-black tracking-tighter ${finanzas.plNeto >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-            ${finanzas.plNeto.toLocaleString()}
+            {formatCurrency(finanzas.plNeto)}
           </span>
         </div>
 
@@ -114,7 +132,7 @@ export default function ReportesClient({
             </div>
           </div>
           <span className="text-4xl font-black tracking-tighter">
-            ${finanzas.flujoCaja.toLocaleString()}
+            {formatCurrency(finanzas.flujoCaja)}
           </span>
           <p className="text-xs text-slate-400 font-bold -mt-2">Efectivo que debe estar en caja</p>
         </div>
@@ -133,19 +151,19 @@ export default function ReportesClient({
           <div className="space-y-4">
             <div className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl">
               <span className="font-bold text-slate-600">Ventas en Efectivo</span>
-              <span className="font-black text-slate-900">${finanzas.ventasEfectivo.toLocaleString()}</span>
+              <span className="font-black text-slate-900">{formatCurrency(finanzas.ventasEfectivo)}</span>
             </div>
             <div className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl">
               <span className="font-bold text-slate-600">Ventas con Tarjeta</span>
-              <span className="font-black text-slate-900">${finanzas.ventasTarjeta.toLocaleString()}</span>
+              <span className="font-black text-slate-900">{formatCurrency(finanzas.ventasTarjeta)}</span>
             </div>
             <div className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl">
               <span className="font-bold text-slate-600">Ventas por Transferencia</span>
-              <span className="font-black text-slate-900">${finanzas.ventasTransferencia.toLocaleString()}</span>
+              <span className="font-black text-slate-900">{formatCurrency(finanzas.ventasTransferencia)}</span>
             </div>
             <div className="flex justify-between items-center p-4 bg-emerald-50 text-emerald-700 rounded-2xl border border-emerald-100">
               <span className="font-black uppercase text-xs tracking-widest">Total Ingresos</span>
-              <span className="font-black text-xl">${finanzas.totalIngresos.toLocaleString()}</span>
+              <span className="font-black text-xl">{formatCurrency(finanzas.totalIngresos)}</span>
             </div>
           </div>
         </div>
@@ -159,23 +177,23 @@ export default function ReportesClient({
           <div className="space-y-4">
             <div className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl">
               <span className="font-bold text-slate-600">Compras Pagadas (Efectivo Caja)</span>
-              <span className="font-black text-slate-900">${finanzas.comprasEfectivo.toLocaleString()}</span>
+              <span className="font-black text-slate-900">{formatCurrency(finanzas.comprasEfectivo)}</span>
             </div>
             <div className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl">
               <span className="font-bold text-slate-600">Compras Pagadas (Otros Métodos)</span>
-              <span className="font-black text-slate-900">${finanzas.comprasOtros.toLocaleString()}</span>
+              <span className="font-black text-slate-900">{formatCurrency(finanzas.comprasOtros)}</span>
             </div>
             <div className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl">
               <span className="font-bold text-slate-600">Gastos Operativos (Efectivo)</span>
-              <span className="font-black text-slate-900">${finanzas.gastosOperativos.toLocaleString()}</span>
+              <span className="font-black text-slate-900">{formatCurrency(finanzas.gastosOperativos)}</span>
             </div>
             <div className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl">
               <span className="font-bold text-slate-600">Nómina / Adelantos (Efectivo)</span>
-              <span className="font-black text-slate-900">${finanzas.gastosNomina.toLocaleString()}</span>
+              <span className="font-black text-slate-900">{formatCurrency(finanzas.gastosNomina)}</span>
             </div>
             <div className="flex justify-between items-center p-4 bg-rose-50 text-rose-700 rounded-2xl border border-rose-100">
               <span className="font-black uppercase text-xs tracking-widest">Total Egresos</span>
-              <span className="font-black text-xl">${finanzas.totalEgresos.toLocaleString()}</span>
+              <span className="font-black text-xl">{formatCurrency(finanzas.totalEgresos)}</span>
             </div>
           </div>
         </div>

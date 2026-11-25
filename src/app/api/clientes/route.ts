@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { CrearClienteSchema } from '@/lib/validations/cliente.schema'
+import { requireActiveUser } from '@/lib/auth/session'
 
 export const dynamic = 'force-dynamic'
 
 // GET /api/clientes?q=nombre_o_documento&page=1&limit=20
 export async function GET(req: NextRequest) {
+  const auth = await requireActiveUser()
+  if (!auth.ok) {
+    return NextResponse.json({ success: false, data: [], error: auth.error }, { status: 401 })
+  }
+
   const supabase = await createClient()
   const q = req.nextUrl.searchParams.get('q')?.trim() || ''
   
@@ -37,12 +43,17 @@ export async function GET(req: NextRequest) {
 
 // POST /api/clientes  — crear cliente rápido
 export async function POST(req: NextRequest) {
+  const auth = await requireActiveUser()
+  if (!auth.ok) {
+    return NextResponse.json({ success: false, error: auth.error }, { status: 401 })
+  }
+
   const supabase = await createClient()
   const body = await req.json()
 
   const validation = CrearClienteSchema.safeParse(body)
   if (!validation.success) {
-    return NextResponse.json({ success: false, error: 'Datos inválidos: ' + validation.error.issues.map((e: any) => e.message).join(', ') }, { status: 400 })
+    return NextResponse.json({ success: false, error: 'Datos inválidos: ' + validation.error.issues.map((e) => e.message).join(', ') }, { status: 400 })
   }
 
   const dataInput = validation.data

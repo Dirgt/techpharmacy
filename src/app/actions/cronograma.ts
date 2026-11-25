@@ -46,7 +46,7 @@ export async function createTurno(formData: FormData) {
   if (error) return { error: error.message }
 
   // Registro en logs
-  await supabase.from('logs_actividad' as any).insert({
+  await supabase.from('logs_actividad').insert({
     usuario_id: user?.id,
     accion: 'CREAR_TURNO',
     detalles: `Turno ${turno} creado para el ${fecha}`
@@ -78,7 +78,7 @@ export async function updateTurno(id: string, formData: FormData) {
 
   if (error) return { error: error.message }
 
-  await supabase.from('logs_actividad' as any).insert({
+  await supabase.from('logs_actividad').insert({
     usuario_id: user?.id,
     accion: 'ACTUALIZAR_TURNO',
     detalles: `Turno ID ${id} actualizado a ${turno} en ${fecha}`
@@ -95,7 +95,7 @@ export async function deleteTurno(id: string) {
   const { error } = await supabase.from('cronogramas').delete().eq('id', id)
   if (error) return { error: error.message }
 
-  await supabase.from('logs_actividad' as any).insert({
+  await supabase.from('logs_actividad').insert({
     usuario_id: user?.id,
     accion: 'ELIMINAR_TURNO',
     detalles: `Turno ID ${id} eliminado`
@@ -110,7 +110,6 @@ export async function deleteTurno(id: string) {
  */
 export async function clonePreviousMonth(targetDate: string) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
   
   const target = new Date(targetDate)
   const prevMonth = new Date(target.getFullYear(), target.getMonth() - 1, 1)

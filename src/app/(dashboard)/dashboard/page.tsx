@@ -13,28 +13,32 @@ import {
 import { getDashboardAlertas } from '@/app/actions/dashboard'
 import { getIngresosGastosMensuales, getReporteFinancieroDiario } from '@/app/actions/reportes'
 import { IngresosGastosChart } from '@/components/reportes/ingresos-gastos-chart'
+import { formatCurrency } from '@/lib/utils'
+import { getCurrentUserWithProfile } from '@/lib/auth/session'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
 
-  const [alertasRes, graficoRes, financieroDiaRes] = await Promise.all([
+  const [session, alertasRes, graficoRes, financieroDiaRes, usuariosActivosRes] = await Promise.all([
+    getCurrentUserWithProfile(),
     getDashboardAlertas(),
     getIngresosGastosMensuales(),
-    getReporteFinancieroDiario()
+    getReporteFinancieroDiario(),
+    supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('status', 'activo')
   ])
 
   const alertas = alertasRes.success ? alertasRes.data : { vencimientos: [], vencidos: [], stockBajo: [] }
   const datosGrafico = graficoRes.success ? graficoRes.data : []
   const finDia = financieroDiaRes.success ? financieroDiaRes.data : { facturas: [], gastos: [], compras: [] }
+  const usuariosActivosCount = usuariosActivosRes.count ?? 0
 
-  const totalVentasDia = finDia.facturas.reduce((sum: number, f: any) => sum + Number(f.total || 0), 0)
+  const totalVentasDia = finDia.facturas.reduce((sum: number, f) => sum + Number(f.total || 0), 0)
   const totalCriticos = (alertas?.vencidos?.length || 0) + (alertas?.stockBajo?.length || 0)
 
   const stats = [
-    { title: 'Ventas de Hoy', value: `$${totalVentasDia.toFixed(2)}`, icon: TrendingUp, trend: 'Actual', color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { title: 'Ventas de Hoy', value: formatCurrency(totalVentasDia), icon: TrendingUp, trend: 'Actual', color: 'text-emerald-600', bg: 'bg-emerald-50' },
     { title: 'Alertas de Stock', value: alertas?.stockBajo?.length.toString() || '0', icon: Package, trend: 'Críticos', color: 'text-blue-600', bg: 'bg-blue-50' },
-    { title: 'Usuarios Activos', value: '1', icon: Users, trend: 'Admin', color: 'text-purple-600', bg: 'bg-purple-50' },
+    { title: 'Usuarios Activos', value: usuariosActivosCount.toString(), icon: Users, trend: 'Equipo', color: 'text-purple-600', bg: 'bg-purple-50' },
     { title: 'Vencimientos', value: ((alertas?.vencidos?.length || 0) + (alertas?.vencimientos?.length || 0)).toString(), icon: AlertCircle, trend: 'Revisión', color: 'text-amber-600', bg: 'bg-amber-50' },
   ]
 
@@ -48,7 +52,7 @@ export default async function DashboardPage() {
           Resumen Operativo
         </h1>
         <p className="text-slate-500 text-lg font-medium">
-          Bienvenido, <span className="text-emerald-600 font-bold">{user?.user_metadata?.full_name || user?.email}</span>. Aquí tienes el estado actual de la farmacia.
+          Bienvenido, <span className="text-emerald-600 font-bold">{session?.profile?.full_name || session?.user?.email}</span>. Aquí tienes el estado actual de la farmacia.
         </p>
       </div>
 
@@ -94,8 +98,8 @@ export default async function DashboardPage() {
           </CardHeader>
           <CardContent className="p-0 overflow-y-auto max-h-[350px]">
             <div className="flex flex-col divide-y divide-slate-100">
-              {alertas?.vencidos?.map((item: any) => (
-                <div key={item.id} className="p-6 flex items-start gap-4 hover:bg-slate-50">
+              {alertas?.vencidos?.map((item, idx: number) => (
+                <div key={`vencido-${item.inventario_id || item.producto_id || idx}`} className="p-6 flex items-start gap-4 hover:bg-slate-50">
                   <div className="bg-rose-100 p-2 rounded-full shrink-0">
                     <AlertTriangle className="h-5 w-5 text-rose-600" />
                   </div>
@@ -106,8 +110,8 @@ export default async function DashboardPage() {
                 </div>
               ))}
               
-              {alertas?.vencimientos?.map((item: any) => (
-                <div key={item.id} className="p-6 flex items-start gap-4 hover:bg-slate-50">
+              {alertas?.vencimientos?.map((item, idx: number) => (
+                <div key={`vencimiento-${item.inventario_id || item.producto_id || idx}`} className="p-6 flex items-start gap-4 hover:bg-slate-50">
                   <div className="bg-amber-100 p-2 rounded-full shrink-0">
                     <Clock className="h-5 w-5 text-amber-600" />
                   </div>
@@ -118,8 +122,8 @@ export default async function DashboardPage() {
                 </div>
               ))}
 
-              {alertas?.stockBajo?.map((item: any) => (
-                <div key={item.id} className="p-6 flex items-start gap-4 hover:bg-slate-50">
+              {alertas?.stockBajo?.map((item, idx: number) => (
+                <div key={`stock-${item.inventario_id || item.producto_id || idx}`} className="p-6 flex items-start gap-4 hover:bg-slate-50">
                   <div className="bg-blue-100 p-2 rounded-full shrink-0">
                     <Package className="h-5 w-5 text-blue-600" />
                   </div>

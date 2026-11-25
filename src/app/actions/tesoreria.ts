@@ -3,8 +3,12 @@
 import { createClient } from '@/lib/supabase/server'
 import { ProveedorInput, ProveedorSchema, GastoInput, GastoSchema, CompraInput, CompraSchema } from '@/lib/validations/tesoreria.schema'
 import { revalidatePath } from 'next/cache'
+import { requireActiveUser, requireAdmin } from '@/lib/auth/session'
 
 export async function getProveedores() {
+  const auth = await requireActiveUser()
+  if (!auth.ok) return { success: false, error: auth.error }
+
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('proveedores')
@@ -16,10 +20,13 @@ export async function getProveedores() {
 }
 
 export async function getCompras() {
+  const auth = await requireActiveUser()
+  if (!auth.ok) return { success: false, error: auth.error }
+
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('compras')
-    .select('*, proveedores(nombre), caja_sesiones(abierto_por)')
+    .select('*, proveedores(nombre), caja_sesiones(abierto_por), compra_detalles(id, cantidad, costo_unitario, subtotal, productos(nombre, codigo))')
     .order('created_at', { ascending: false })
 
   if (error) return { success: false, error: error.message }
@@ -28,6 +35,9 @@ export async function getCompras() {
 
 export async function createProveedor(input: ProveedorInput) {
   try {
+    const auth = await requireAdmin()
+    if (!auth.ok) return { success: false, error: auth.error }
+
     const validated = ProveedorSchema.parse(input)
     const supabase = await createClient()
     const { data, error } = await supabase
@@ -37,15 +47,46 @@ export async function createProveedor(input: ProveedorInput) {
       .single()
 
     if (error) return { success: false, error: error.message }
-    revalidatePath('/dashboard/proveedores')
+    revalidatePath('/proveedores')
     return { success: true, data }
-  } catch (error: any) {
-    return { success: false, error: error.message || 'Error de validación' }
+  } catch (error: unknown) {
+    return { success: false, error: error instanceof Error ? error.message : 'Error de validación' }
+  }
+}
+
+export async function updateProveedor(id: string, input: ProveedorInput) {
+  try {
+    const auth = await requireAdmin()
+    if (!auth.ok) return { success: false, error: auth.error }
+
+    const validated = ProveedorSchema.parse(input)
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from('proveedores')
+      .update({
+        nombre: validated.nombre,
+        documento_nit: validated.documento_nit ?? null,
+        telefono: validated.telefono ?? null,
+        email: validated.email ?? null,
+        dias_credito: validated.dias_credito
+      })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) return { success: false, error: error.message }
+    revalidatePath('/proveedores')
+    return { success: true, data }
+  } catch (error: unknown) {
+    return { success: false, error: error instanceof Error ? error.message : 'Error de validación' }
   }
 }
 
 export async function registrarGasto(input: GastoInput) {
   try {
+    const auth = await requireActiveUser()
+    if (!auth.ok) return { success: false, error: auth.error }
+
     const validated = GastoSchema.parse(input)
     const supabase = await createClient()
 
@@ -61,21 +102,21 @@ export async function registrarGasto(input: GastoInput) {
     if (error) return { success: false, error: error.message }
     
     // Invalidamos facturación porque ahí se muestra la caja y gastos
-    revalidatePath('/dashboard/facturas')
-    revalidatePath('/dashboard/reportes')
+    revalidatePath('/facturas')
+    revalidatePath('/reportes')
     return { success: true, data }
-  } catch (error: any) {
-    return { success: false, error: error.message || 'Error de validación' }
+  } catch (error: unknown) {
+    return { success: false, error: error instanceof Error ? error.message : 'Error de validación' }
   }
 }
 
 export async function registrarCompra(input: CompraInput) {
   try {
+    const auth = await requireAdmin()
+    if (!auth.ok) return { success: false, error: auth.error }
+
     const validated = CompraSchema.parse(input)
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) return { success: false, error: 'No autorizado' }
 
     // Map para coincidir con el Composite Type "compra_detalle_input" de Postgres
     const detalles_rpc = validated.detalles.map(d => ({
@@ -90,22 +131,22 @@ export async function registrarCompra(input: CompraInput) {
       p_total: validated.total,
       p_estado_pago: validated.estado_pago,
       p_metodo_pago: validated.metodo_pago || 'efectivo',
-      p_caja_sesion_id: (validated.estado_pago === 'pagado' && validated.metodo_pago === 'efectivo') ? (validated.caja_sesion_id as string) : (null as any),
+      p_caja_sesion_id: (validated.estado_pago === 'pagado' && validated.metodo_pago === 'efectivo') ? (validated.caja_sesion_id as string) : (null as unknown as string),
       p_detalles: detalles_rpc,
-      p_user_id: user.id
+      p_user_id: auth.user.id
     })
 
     if (error) return { success: false, error: error.message }
     
-    revalidatePath('/dashboard/compras')
-    revalidatePath('/dashboard/inventario')
+    revalidatePath('/compras')
+    revalidatePath('/inventario')
     if (validated.estado_pago === 'pagado' && validated.metodo_pago === 'efectivo') {
-      revalidatePath('/dashboard/facturas')
-      revalidatePath('/dashboard/reportes')
+      revalidatePath('/facturas')
+      revalidatePath('/reportes')
     }
     
     return { success: true, data }
-  } catch (error: any) {
-    return { success: false, error: error.message || 'Error de validación' }
+  } catch (error: unknown) {
+    return { success: false, error: error instanceof Error ? error.message : 'Error de validación' }
   }
 }

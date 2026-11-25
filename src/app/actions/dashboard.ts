@@ -10,36 +10,43 @@ export async function getDashboardAlertas() {
   const fechaLimite = new Date()
   fechaLimite.setDate(hoy.getDate() + 90)
   
-  const { data: vencimientos } = await supabase
-    .from('vista_inventario_completo')
-    .select('*')
-    .lte('fecha_vencimiento', fechaLimite.toISOString().split('T')[0])
-    .gte('fecha_vencimiento', hoy.toISOString().split('T')[0])
-    .order('fecha_vencimiento', { ascending: true })
-    .limit(10)
+  const hoyStr = hoy.toISOString().split('T')[0]
+  const limiteStr = fechaLimite.toISOString().split('T')[0]
 
-  // 2. Productos vencidos
-  const { data: vencidos } = await supabase
-    .from('vista_inventario_completo')
-    .select('*')
-    .lt('fecha_vencimiento', hoy.toISOString().split('T')[0])
-    .order('fecha_vencimiento', { ascending: false })
-    .limit(5)
+  const [
+    { data: vencimientos },
+    { data: vencidos },
+    { data: inventarioAll },
+  ] = await Promise.all([
+    supabase
+      .from('vista_inventario_completo')
+      .select('*')
+      .lte('fecha_vencimiento', limiteStr)
+      .gte('fecha_vencimiento', hoyStr)
+      .order('fecha_vencimiento', { ascending: true })
+      .limit(10),
+    supabase
+      .from('vista_inventario_completo')
+      .select('*')
+      .lt('fecha_vencimiento', hoyStr)
+      .order('fecha_vencimiento', { ascending: false })
+      .limit(5),
+    supabase
+      .from('vista_inventario_completo')
+      .select('*')
+      .order('cajas', { ascending: true }),
+  ])
 
-  // 3. Productos con stock crítico
-  const { data: stockBajo } = await supabase
-    .from('vista_inventario_completo')
-    .select('*')
-    .lte('cajas', 5) // idealmente se compara con stock_minimo, pero no todas las BD tienen esta info en la vista
-    .order('cajas', { ascending: true })
-    .limit(10)
+  const stockBajo = (inventarioAll || [])
+    .filter((item) => (item.cajas ?? 0) <= (item.stock_minimo ?? 2))
+    .slice(0, 10)
 
   return {
     success: true,
     data: {
       vencimientos: vencimientos || [],
       vencidos: vencidos || [],
-      stockBajo: stockBajo || []
+      stockBajo
     }
   }
 }

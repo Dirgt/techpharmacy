@@ -20,6 +20,7 @@ export type Database = {
           campo_modificado: string | null
           created_at: string | null
           detalles: string | null
+          drogueria_id: string
           id: string
           inventario_id: string | null
           operador: string | null
@@ -31,6 +32,7 @@ export type Database = {
           campo_modificado?: string | null
           created_at?: string | null
           detalles?: string | null
+          drogueria_id?: string
           id?: string
           inventario_id?: string | null
           operador?: string | null
@@ -42,6 +44,7 @@ export type Database = {
           campo_modificado?: string | null
           created_at?: string | null
           detalles?: string | null
+          drogueria_id?: string
           id?: string
           inventario_id?: string | null
           operador?: string | null
@@ -49,6 +52,13 @@ export type Database = {
           valor_nuevo?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "auditoria_inventario_drogueria_id_fkey"
+            columns: ["drogueria_id"]
+            isOneToOne: false
+            referencedRelation: "droguerias"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "auditoria_inventario_inventario_id_fkey"
             columns: ["inventario_id"]
@@ -68,6 +78,7 @@ export type Database = {
       caja_sesiones: {
         Row: {
           abierto_por: string
+          drogueria_id: string
           estado: string | null
           fecha_apertura: string | null
           fecha_cierre: string | null
@@ -77,6 +88,7 @@ export type Database = {
         }
         Insert: {
           abierto_por: string
+          drogueria_id?: string
           estado?: string | null
           fecha_apertura?: string | null
           fecha_cierre?: string | null
@@ -86,6 +98,7 @@ export type Database = {
         }
         Update: {
           abierto_por?: string
+          drogueria_id?: string
           estado?: string | null
           fecha_apertura?: string | null
           fecha_cierre?: string | null
@@ -101,6 +114,13 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "caja_sesiones_drogueria_id_fkey"
+            columns: ["drogueria_id"]
+            isOneToOne: false
+            referencedRelation: "droguerias"
+            referencedColumns: ["id"]
+          },
         ]
       }
       clientes: {
@@ -111,6 +131,7 @@ export type Database = {
           descuento_default: number | null
           direccion: string | null
           documento: string | null
+          drogueria_id: string
           email: string | null
           id: string
           iva_default: number | null
@@ -127,6 +148,7 @@ export type Database = {
           descuento_default?: number | null
           direccion?: string | null
           documento?: string | null
+          drogueria_id?: string
           email?: string | null
           id?: string
           iva_default?: number | null
@@ -143,6 +165,7 @@ export type Database = {
           descuento_default?: number | null
           direccion?: string | null
           documento?: string | null
+          drogueria_id?: string
           email?: string | null
           id?: string
           iva_default?: number | null
@@ -152,13 +175,22 @@ export type Database = {
           tipo_doc?: string | null
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "clientes_drogueria_id_fkey"
+            columns: ["drogueria_id"]
+            isOneToOne: false
+            referencedRelation: "droguerias"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       compra_detalles: {
         Row: {
           cantidad: number
           compra_id: string | null
           costo_unitario: number
+          drogueria_id: string
           id: string
           producto_id: string | null
           subtotal: number
@@ -167,6 +199,7 @@ export type Database = {
           cantidad?: number
           compra_id?: string | null
           costo_unitario?: number
+          drogueria_id?: string
           id?: string
           producto_id?: string | null
           subtotal?: number
@@ -175,6 +208,7 @@ export type Database = {
           cantidad?: number
           compra_id?: string | null
           costo_unitario?: number
+          drogueria_id?: string
           id?: string
           producto_id?: string | null
           subtotal?: number
@@ -185,6 +219,13 @@ export type Database = {
             columns: ["compra_id"]
             isOneToOne: false
             referencedRelation: "compras"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "compra_detalles_drogueria_id_fkey"
+            columns: ["drogueria_id"]
+            isOneToOne: false
+            referencedRelation: "droguerias"
             referencedColumns: ["id"]
           },
           {
@@ -207,6 +248,7 @@ export type Database = {
         Row: {
           caja_sesion_id: string | null
           created_at: string | null
+          drogueria_id: string
           estado_pago: string
           fecha_emision: string
           id: string
@@ -218,6 +260,7 @@ export type Database = {
         Insert: {
           caja_sesion_id?: string | null
           created_at?: string | null
+          drogueria_id?: string
           estado_pago?: string
           fecha_emision?: string
           id?: string
@@ -229,6 +272,7 @@ export type Database = {
         Update: {
           caja_sesion_id?: string | null
           created_at?: string | null
+          drogueria_id?: string
           estado_pago?: string
           fecha_emision?: string
           id?: string
@@ -246,6 +290,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "compras_drogueria_id_fkey"
+            columns: ["drogueria_id"]
+            isOneToOne: false
+            referencedRelation: "droguerias"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "compras_proveedor_id_fkey"
             columns: ["proveedor_id"]
             isOneToOne: false
@@ -258,6 +309,7 @@ export type Database = {
         Row: {
           creado_por: string | null
           created_at: string | null
+          drogueria_id: string
           fecha: string
           id: string
           turno: string
@@ -266,6 +318,7 @@ export type Database = {
         Insert: {
           creado_por?: string | null
           created_at?: string | null
+          drogueria_id?: string
           fecha: string
           id?: string
           turno: string
@@ -274,12 +327,20 @@ export type Database = {
         Update: {
           creado_por?: string | null
           created_at?: string | null
+          drogueria_id?: string
           fecha?: string
           id?: string
           turno?: string
           usuario_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "cronogramas_drogueria_id_fkey"
+            columns: ["drogueria_id"]
+            isOneToOne: false
+            referencedRelation: "droguerias"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "cronogramas_usuario_id_fkey"
             columns: ["usuario_id"]
@@ -289,11 +350,63 @@ export type Database = {
           },
         ]
       }
+      droguerias: {
+        Row: {
+          created_at: string | null
+          direccion: string | null
+          estado: string
+          fecha_vencimiento: string | null
+          id: string
+          max_usuarios: number
+          motivo_suspension: string | null
+          nit: string | null
+          nombre: string
+          plan: string
+          regimen: string | null
+          subdominio: string
+          telefono: string | null
+          url_personalizada: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          direccion?: string | null
+          estado?: string
+          fecha_vencimiento?: string | null
+          id?: string
+          max_usuarios?: number
+          motivo_suspension?: string | null
+          nit?: string | null
+          nombre: string
+          plan?: string
+          regimen?: string | null
+          subdominio: string
+          telefono?: string | null
+          url_personalizada?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          direccion?: string | null
+          estado?: string
+          fecha_vencimiento?: string | null
+          id?: string
+          max_usuarios?: number
+          motivo_suspension?: string | null
+          nit?: string | null
+          nombre?: string
+          plan?: string
+          regimen?: string | null
+          subdominio?: string
+          telefono?: string | null
+          url_personalizada?: string | null
+        }
+        Relationships: []
+      }
       factura_detalles: {
         Row: {
           cantidad_blisters: number | null
           cantidad_cajas: number | null
           cantidad_unidades: number | null
+          drogueria_id: string
           factura_id: string | null
           id: string
           precio_unitario: number
@@ -303,6 +416,7 @@ export type Database = {
           cantidad_blisters?: number | null
           cantidad_cajas?: number | null
           cantidad_unidades?: number | null
+          drogueria_id?: string
           factura_id?: string | null
           id?: string
           precio_unitario: number
@@ -312,12 +426,20 @@ export type Database = {
           cantidad_blisters?: number | null
           cantidad_cajas?: number | null
           cantidad_unidades?: number | null
+          drogueria_id?: string
           factura_id?: string | null
           id?: string
           precio_unitario?: number
           producto_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "factura_detalles_drogueria_id_fkey"
+            columns: ["drogueria_id"]
+            isOneToOne: false
+            referencedRelation: "droguerias"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "factura_detalles_factura_id_fkey"
             columns: ["factura_id"]
@@ -357,6 +479,7 @@ export type Database = {
           created_at: string | null
           descuento_monto: number | null
           descuento_porcentaje: number | null
+          drogueria_id: string
           estado_pago: string | null
           fecha_vencimiento: string | null
           id: string
@@ -378,6 +501,7 @@ export type Database = {
           created_at?: string | null
           descuento_monto?: number | null
           descuento_porcentaje?: number | null
+          drogueria_id?: string
           estado_pago?: string | null
           fecha_vencimiento?: string | null
           id?: string
@@ -399,6 +523,7 @@ export type Database = {
           created_at?: string | null
           descuento_monto?: number | null
           descuento_porcentaje?: number | null
+          drogueria_id?: string
           estado_pago?: string | null
           fecha_vencimiento?: string | null
           id?: string
@@ -421,6 +546,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "facturas_drogueria_id_fkey"
+            columns: ["drogueria_id"]
+            isOneToOne: false
+            referencedRelation: "droguerias"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "facturas_vendedor_id_fkey"
             columns: ["vendedor_id"]
             isOneToOne: false
@@ -435,6 +567,7 @@ export type Database = {
           comprobante: string | null
           concepto: string
           created_at: string | null
+          drogueria_id: string
           id: string
           monto: number
           tipo: string
@@ -444,6 +577,7 @@ export type Database = {
           comprobante?: string | null
           concepto: string
           created_at?: string | null
+          drogueria_id?: string
           id?: string
           monto: number
           tipo?: string
@@ -453,6 +587,7 @@ export type Database = {
           comprobante?: string | null
           concepto?: string
           created_at?: string | null
+          drogueria_id?: string
           id?: string
           monto?: number
           tipo?: string
@@ -465,13 +600,22 @@ export type Database = {
             referencedRelation: "caja_sesiones"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "gastos_drogueria_id_fkey"
+            columns: ["drogueria_id"]
+            isOneToOne: false
+            referencedRelation: "droguerias"
+            referencedColumns: ["id"]
+          },
         ]
       }
       inventario: {
         Row: {
           blisters: number | null
+          blisters_por_caja: number | null
           cajas: number | null
           created_at: string | null
+          drogueria_id: string
           fecha_vencimiento: string | null
           id: string
           lote: string | null
@@ -487,13 +631,16 @@ export type Database = {
           stock_minimo: number | null
           ubicacion: string | null
           unidades: number | null
+          unidades_por_blister: number | null
           updated_at: string | null
           usuario_id: string | null
         }
         Insert: {
           blisters?: number | null
+          blisters_por_caja?: number | null
           cajas?: number | null
           created_at?: string | null
+          drogueria_id?: string
           fecha_vencimiento?: string | null
           id?: string
           lote?: string | null
@@ -509,13 +656,16 @@ export type Database = {
           stock_minimo?: number | null
           ubicacion?: string | null
           unidades?: number | null
+          unidades_por_blister?: number | null
           updated_at?: string | null
           usuario_id?: string | null
         }
         Update: {
           blisters?: number | null
+          blisters_por_caja?: number | null
           cajas?: number | null
           created_at?: string | null
+          drogueria_id?: string
           fecha_vencimiento?: string | null
           id?: string
           lote?: string | null
@@ -531,10 +681,18 @@ export type Database = {
           stock_minimo?: number | null
           ubicacion?: string | null
           unidades?: number | null
+          unidades_por_blister?: number | null
           updated_at?: string | null
           usuario_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "inventario_drogueria_id_fkey"
+            columns: ["drogueria_id"]
+            isOneToOne: false
+            referencedRelation: "droguerias"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "inventario_producto_id_fkey"
             columns: ["producto_id"]
@@ -561,26 +719,38 @@ export type Database = {
       laboratorios: {
         Row: {
           created_at: string | null
+          drogueria_id: string
           id: string
           nombre: string
         }
         Insert: {
           created_at?: string | null
+          drogueria_id?: string
           id?: string
           nombre: string
         }
         Update: {
           created_at?: string | null
+          drogueria_id?: string
           id?: string
           nombre?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "laboratorios_drogueria_id_fkey"
+            columns: ["drogueria_id"]
+            isOneToOne: false
+            referencedRelation: "droguerias"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       logs_actividad: {
         Row: {
           accion: string
           created_at: string | null
           detalles: string
+          drogueria_id: string
           entidad_id: string | null
           id: string
           tipo_entidad: string | null
@@ -590,6 +760,7 @@ export type Database = {
           accion: string
           created_at?: string | null
           detalles: string
+          drogueria_id?: string
           entidad_id?: string | null
           id?: string
           tipo_entidad?: string | null
@@ -599,18 +770,28 @@ export type Database = {
           accion?: string
           created_at?: string | null
           detalles?: string
+          drogueria_id?: string
           entidad_id?: string | null
           id?: string
           tipo_entidad?: string | null
           usuario_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "logs_actividad_drogueria_id_fkey"
+            columns: ["drogueria_id"]
+            isOneToOne: false
+            referencedRelation: "droguerias"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       productos: {
         Row: {
           codigo: string
           created_at: string | null
           descripcion: string | null
+          drogueria_id: string
           id: string
           laboratorio_id: string | null
           nombre: string
@@ -621,6 +802,7 @@ export type Database = {
           codigo: string
           created_at?: string | null
           descripcion?: string | null
+          drogueria_id?: string
           id?: string
           laboratorio_id?: string | null
           nombre: string
@@ -631,6 +813,7 @@ export type Database = {
           codigo?: string
           created_at?: string | null
           descripcion?: string | null
+          drogueria_id?: string
           id?: string
           laboratorio_id?: string | null
           nombre?: string
@@ -638,6 +821,13 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "productos_drogueria_id_fkey"
+            columns: ["drogueria_id"]
+            isOneToOne: false
+            referencedRelation: "droguerias"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "productos_laboratorio_id_fkey"
             columns: ["laboratorio_id"]
@@ -657,6 +847,7 @@ export type Database = {
       profiles: {
         Row: {
           created_at: string | null
+          drogueria_id: string | null
           full_name: string | null
           id: string
           role: string | null
@@ -666,6 +857,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          drogueria_id?: string | null
           full_name?: string | null
           id: string
           role?: string | null
@@ -675,6 +867,7 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          drogueria_id?: string | null
           full_name?: string | null
           id?: string
           role?: string | null
@@ -682,13 +875,22 @@ export type Database = {
           updated_at?: string | null
           username?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_drogueria_id_fkey"
+            columns: ["drogueria_id"]
+            isOneToOne: false
+            referencedRelation: "droguerias"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       proveedores: {
         Row: {
           created_at: string | null
           dias_credito: number | null
           documento_nit: string | null
+          drogueria_id: string
           email: string | null
           id: string
           nombre: string
@@ -698,6 +900,7 @@ export type Database = {
           created_at?: string | null
           dias_credito?: number | null
           documento_nit?: string | null
+          drogueria_id?: string
           email?: string | null
           id?: string
           nombre: string
@@ -707,12 +910,21 @@ export type Database = {
           created_at?: string | null
           dias_credito?: number | null
           documento_nit?: string | null
+          drogueria_id?: string
           email?: string | null
           id?: string
           nombre?: string
           telefono?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "proveedores_drogueria_id_fkey"
+            columns: ["drogueria_id"]
+            isOneToOne: false
+            referencedRelation: "droguerias"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
@@ -745,6 +957,7 @@ export type Database = {
         Row: {
           actualizado_por: string | null
           blisters: number | null
+          blisters_por_caja: number | null
           cajas: number | null
           codigo: string | null
           fecha_vencimiento: string | null
@@ -766,12 +979,41 @@ export type Database = {
           stock_minimo: number | null
           ubicacion: string | null
           unidades: number | null
+          unidades_por_blister: number | null
           updated_at: string | null
         }
         Relationships: []
       }
     }
     Functions: {
+      crear_factura_tx: {
+        Args: {
+          p_caja_sesion_id: string
+          p_cliente_documento: string
+          p_cliente_nombre: string
+          p_condicion_pago_dias: number
+          p_descuento_porcentaje: number
+          p_items: Database["public"]["CompositeTypes"]["factura_item_input"][]
+          p_iva_porcentaje: number
+          p_metodo_pago: string
+          p_orden_compra: string
+          p_tipo_venta: string
+          p_vendedor_id: string
+        }
+        Returns: Json
+      }
+      get_current_drogueria_id: { Args: never; Returns: string }
+      get_public_tenant_by_host: {
+        Args: { p_host?: string; p_subdominio?: string }
+        Returns: {
+          estado: string
+          fecha_vencimiento: string
+          id: string
+          motivo_suspension: string
+          nombre: string
+          subdominio: string
+        }[]
+      }
       registrar_compra_tx: {
         Args: {
           p_caja_sesion_id: string
@@ -797,27 +1039,29 @@ export type Database = {
       }
       upsert_inventario_tx: {
         Args: {
-          p_blisters: number
-          p_cajas: number
-          p_codigo: string
-          p_fecha_vencimiento: string
+          p_blisters?: number
+          p_blisters_por_caja?: number
+          p_cajas?: number
+          p_codigo?: string
+          p_fecha_vencimiento?: string
           p_inventario_id?: string
-          p_laboratorio_id: string
-          p_lote: string
-          p_margen_blister: number
-          p_margen_unidad: number
-          p_nombre: string
-          p_porcentaje_ganancia: number
-          p_precio_blister: number
-          p_precio_caja: number
-          p_precio_unidad: number
-          p_principio_activo: string
-          p_producto_id: string
-          p_registro_invima: string
-          p_seccion: string
-          p_stock_minimo: number
-          p_ubicacion: string
-          p_unidades: number
+          p_laboratorio_id?: string
+          p_lote?: string
+          p_margen_blister?: number
+          p_margen_unidad?: number
+          p_nombre?: string
+          p_porcentaje_ganancia?: number
+          p_precio_blister?: number
+          p_precio_caja?: number
+          p_precio_unidad?: number
+          p_principio_activo?: string
+          p_producto_id?: string
+          p_registro_invima?: string
+          p_seccion?: string
+          p_stock_minimo?: number
+          p_ubicacion?: string
+          p_unidades?: number
+          p_unidades_por_blister?: number
         }
         Returns: Json
       }
@@ -831,6 +1075,12 @@ export type Database = {
         cantidad: number | null
         costo_unitario: number | null
       }
+      factura_item_input: {
+        producto_id: string | null
+        cantidad_cajas: number | null
+        cantidad_blisters: number | null
+        cantidad_unidades: number | null
+      }
     }
   }
 }
@@ -843,12 +1093,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -872,11 +1122,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -897,11 +1147,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -922,11 +1172,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -939,11 +1189,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

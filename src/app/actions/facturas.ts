@@ -3,6 +3,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { requireActiveUser } from '@/lib/auth/session'
 
 export type FacturaItem = {
   producto_id: string
@@ -38,96 +39,42 @@ export async function crearFactura(data: FacturaData) {
   const supabase = await createClient()
 
   try {
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) throw new Error('Usuario no autenticado')
+    const auth = await requireActiveUser()
+    if (!auth.ok) throw new Error(auth.error)
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('full_name')
-      .eq('id', data.vendedor_id)
-      .single()
-    const operatorName = profile?.full_name || 'Vendedor'
-
-    // Calcular fecha de vencimiento (solo para crédito)
-    let fecha_vencimiento: string | null = null
-    if (data.tipo_venta === 'credito' && data.condicion_pago_dias > 0) {
-      const fechaVenc = new Date()
-      fechaVenc.setDate(fechaVenc.getDate() + data.condicion_pago_dias)
-      fecha_vencimiento = fechaVenc.toISOString().split('T')[0]
-    }
-
-    const estado_pago = data.tipo_venta === 'contado' ? 'pagado' : 'pendiente'
-
-    // 2. Insertar la factura con todos los campos
-    const { data: factura, error: facturaError } = await supabase
-      .from('facturas')
-      .insert({
-        cliente_nombre:        data.cliente_nombre,
-        cliente_documento:     data.cliente_documento,
-        metodo_pago:           data.metodo_pago,
-        tipo_venta:            data.tipo_venta,
-        condicion_pago_dias:   data.condicion_pago_dias,
-        fecha_vencimiento,
-        orden_compra:          data.orden_compra || null,
-        subtotal_bruto:        data.subtotal_bruto,
-        descuento_porcentaje:  data.descuento_porcentaje,
-        descuento_monto:       data.descuento_monto,
-        iva_porcentaje:        data.iva_porcentaje,
-        iva_total:             data.iva_total,
-        total:                 data.total,
-        estado_pago,
-        vendedor_id:           data.vendedor_id,
-        caja_sesion_id:        data.caja_sesion_id,
-      } as any)
-      .select('id, numero')
-      .single()
-
-    if (facturaError) throw new Error('Error al crear la factura: ' + facturaError.message)
-
-    // 3. Detalles
-    const detalles = data.items.map(item => ({
-      factura_id:          factura.id,
-      producto_id:         item.producto_id,
-      cantidad_cajas:      item.cantidad_cajas,
-      cantidad_blisters:   item.cantidad_blisters,
-      cantidad_unidades:   item.cantidad_unidades,
-      precio_unitario:     item.precio_linea,
+    const itemsRpc = data.items.map(item => ({
+      producto_id: item.producto_id,
+      cantidad_cajas: item.cantidad_cajas,
+      cantidad_blisters: item.cantidad_blisters,
+      cantidad_unidades: item.cantidad_unidades,
     }))
 
-    const { error: detallesError } = await supabase.from('factura_detalles').insert(detalles)
-    if (detallesError) throw new Error('Error al guardar detalles: ' + detallesError.message)
+    const { data: rpcResult, error: rpcError } = await supabase.rpc('crear_factura_tx', {
+      p_cliente_nombre: data.cliente_nombre,
+      p_cliente_documento: data.cliente_documento,
+      p_metodo_pago: data.metodo_pago,
+      p_tipo_venta: data.tipo_venta,
+      p_condicion_pago_dias: data.condicion_pago_dias,
+      p_orden_compra: data.orden_compra || '',
+      p_descuento_porcentaje: data.descuento_porcentaje,
+      p_iva_porcentaje: data.iva_porcentaje,
+      p_vendedor_id: data.vendedor_id || auth.user.id,
+      p_caja_sesion_id: data.caja_sesion_id,
+      p_items: itemsRpc,
+    })
 
-    // 4. Descontar inventario + auditoría
-    for (const item of data.items) {
-      const { data: invCurrent } = await supabase
-        .from('inventario')
-        .select('*')
-        .eq('producto_id', item.producto_id)
-        .single()
+    if (rpcError) throw new Error(rpcError.message)
 
-      if (invCurrent) {
-        const newCajas     = Math.max(0, Number(invCurrent.cajas)    - item.cantidad_cajas)
-        const newBlisters  = Math.max(0, Number(invCurrent.blisters) - item.cantidad_blisters)
-        const newUnidades  = Math.max(0, Number(invCurrent.unidades) - item.cantidad_unidades)
-
-        await supabase.from('inventario').update({
-          cajas: newCajas, blisters: newBlisters, unidades: newUnidades
-        }).eq('producto_id', item.producto_id)
-
-        await supabase.from('auditoria_inventario' as any).insert({
-          inventario_id:    invCurrent.id,
-          operador:         operatorName,
-          accion:           'VENTA',
-          campo_modificado: 'stock',
-          valor_anterior:   JSON.stringify({ cajas: invCurrent.cajas, blisters: invCurrent.blisters, unidades: invCurrent.unidades }),
-          valor_nuevo:      JSON.stringify({ cajas: newCajas, blisters: newBlisters, unidades: newUnidades }),
-          detalles:         `Venta Factura #${factura.numero} — ${data.cliente_nombre} (${data.tipo_venta})`
-        })
-      }
+    const factura = (typeof rpcResult === 'object' && rpcResult !== null ? rpcResult : {}) as {
+      id: string
+      numero: number
+      total?: number
     }
 
     revalidatePath('/facturas')
     revalidatePath('/inventario')
+    revalidatePath('/dashboard')
+    revalidatePath('/reportes')
 
     return { success: true, factura }
   } catch (error: any) {
@@ -189,6 +136,9 @@ export async function getVendedores() {
 export async function marcarComoPagada(facturaId: string, cajaSesionId: string, metodoPago: string) {
   const supabase = await createClient()
   try {
+    const auth = await requireActiveUser()
+    if (!auth.ok) throw new Error(auth.error)
+
     const { error } = await supabase
       .from('facturas')
       .update({

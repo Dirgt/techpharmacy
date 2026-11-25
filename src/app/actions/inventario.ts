@@ -115,7 +115,7 @@ export async function upsertInventario(rawData: UpsertInventarioInput) {
   // 1. Validar los datos de entrada con Zod
   const validation = UpsertInventarioSchema.safeParse(rawData)
   if (!validation.success) {
-    return { success: false, error: 'Datos inválidos: ' + validation.error.issues.map((e: any) => e.message).join(', ') }
+    return { success: false, error: 'Datos inválidos: ' + validation.error.issues.map((e) => e.message).join(', ') }
   }
 
   const data = validation.data
@@ -123,13 +123,12 @@ export async function upsertInventario(rawData: UpsertInventarioInput) {
   // 2. Ejecutar la Transacción vía RPC
   const { data: upserted, error } = await supabase.rpc('upsert_inventario_tx', {
     p_blisters: data.blisters,
-    p_cajas: data.cajas,
     p_blisters_por_caja: data.blisters_por_caja,
-    p_unidades_por_blister: data.unidades_por_blister,
+    p_cajas: data.cajas,
     p_codigo: data.codigo,
-    p_fecha_vencimiento: data.fecha_vencimiento || null as unknown as string, // Cast required if nullable for dates in rpc if empty
+    p_fecha_vencimiento: data.fecha_vencimiento || undefined,
     p_inventario_id: data.id || undefined,
-    p_laboratorio_id: data.laboratorio_id || null as unknown as string,
+    p_laboratorio_id: data.laboratorio_id || undefined,
     p_lote: data.lote || '',
     p_margen_blister: data.margen_blister,
     p_margen_unidad: data.margen_unidad,
@@ -139,12 +138,13 @@ export async function upsertInventario(rawData: UpsertInventarioInput) {
     p_precio_caja: data.precio_caja,
     p_precio_unidad: data.precio_unidad,
     p_principio_activo: data.principio_activo || '',
-    p_producto_id: data.producto_id || null as unknown as string,
+    p_producto_id: data.producto_id || undefined,
     p_registro_invima: data.registro_invima || '',
     p_seccion: data.seccion || '',
     p_stock_minimo: data.stock_minimo,
     p_ubicacion: data.ubicacion || '',
-    p_unidades: data.unidades
+    p_unidades: data.unidades,
+    p_unidades_por_blister: data.unidades_por_blister
   })
 
   if (error) {

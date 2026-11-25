@@ -1,13 +1,14 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Database } from '@/lib/supabase/database.types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { Plus, Search, Building2, Phone, Mail, FileText, Calendar } from 'lucide-react'
-import { createProveedor } from '@/app/actions/tesoreria'
+import { createProveedor, updateProveedor } from '@/app/actions/tesoreria'
 import {
   Dialog,
   DialogContent,
@@ -19,9 +20,11 @@ import {
 type Proveedor = Database['public']['Tables']['proveedores']['Row']
 
 export default function ProveedoresClient({ initialData }: { initialData: Proveedor[] }) {
+  const router = useRouter()
   const [searchTerm, setSearchTerm] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     nombre: '',
     documento_nit: '',
@@ -35,22 +38,46 @@ export default function ProveedoresClient({ initialData }: { initialData: Provee
     p.documento_nit?.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
+  const openCreateModal = () => {
+    setEditingId(null)
+    setFormData({ nombre: '', documento_nit: '', telefono: '', email: '', dias_credito: '0' })
+    setIsModalOpen(true)
+  }
+
+  const openEditModal = (proveedor: Proveedor) => {
+    setEditingId(proveedor.id)
+    setFormData({
+      nombre: proveedor.nombre || '',
+      documento_nit: proveedor.documento_nit || '',
+      telefono: proveedor.telefono || '',
+      email: proveedor.email || '',
+      dias_credito: String(proveedor.dias_credito ?? 0)
+    })
+    setIsModalOpen(true)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
 
-    const result = await createProveedor({
+    const payload = {
       nombre: formData.nombre,
       documento_nit: formData.documento_nit || null,
       telefono: formData.telefono || null,
       email: formData.email || null,
       dias_credito: parseInt(formData.dias_credito) || 0
-    })
+    }
+
+    const result = editingId
+      ? await updateProveedor(editingId, payload)
+      : await createProveedor(payload)
 
     if (result.success) {
-      toast.success('Proveedor registrado correctamente')
+      toast.success(editingId ? 'Proveedor actualizado correctamente' : 'Proveedor registrado correctamente')
       setIsModalOpen(false)
+      setEditingId(null)
       setFormData({ nombre: '', documento_nit: '', telefono: '', email: '', dias_credito: '0' })
+      router.refresh()
     } else {
       toast.error(result.error || 'Error al guardar el proveedor')
     }
@@ -65,16 +92,16 @@ export default function ProveedoresClient({ initialData }: { initialData: Provee
           <p className="text-slate-500 mt-1">Gestión de laboratorios y distribuidores</p>
         </div>
         
-        <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <Dialog open={isModalOpen} onOpenChange={(open) => { setIsModalOpen(open); if (!open) setEditingId(null) }}>
           <DialogTrigger asChild>
-            <Button className="bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-200">
+            <Button onClick={openCreateModal} className="bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-200">
               <Plus className="w-4 h-4 mr-2" />
               Nuevo Proveedor
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
-              <DialogTitle>Registrar Proveedor</DialogTitle>
+              <DialogTitle>{editingId ? 'Editar Proveedor' : 'Registrar Proveedor'}</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4 mt-4">
               <div className="space-y-2">
@@ -220,7 +247,12 @@ export default function ProveedoresClient({ initialData }: { initialData: Provee
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <Button variant="ghost" size="sm" className="text-slate-400 hover:text-indigo-600">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-slate-500 hover:text-indigo-600"
+                        onClick={() => openEditModal(proveedor)}
+                      >
                         Editar
                       </Button>
                     </td>

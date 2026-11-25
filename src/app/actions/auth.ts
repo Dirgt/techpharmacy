@@ -1,7 +1,10 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
+import { isTenantSuspended } from '@/lib/tenant/domain'
+import { resolveTenantWithSupabase } from '@/lib/tenant/resolve'
 
 export async function login(formData: FormData) {
   const email = formData.get('email') as string
@@ -13,13 +16,55 @@ export async function login(formData: FormData) {
 
   const supabase = await createClient()
 
-  const { error } = await supabase.auth.signInWithPassword({
+  const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password,
   })
 
-  if (error) {
+  if (error || !data.user) {
     return { error: 'Credenciales inválidas o cuenta inactiva' }
+  }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select(
+      'status, role, drogueria_id, drogueria:drogueria_id ( id, nombre, subdominio, estado, fecha_vencimiento, motivo_suspension )'
+    )
+    .eq('id', data.user.id)
+    .single()
+
+  if (!profile || profile.status !== 'activo') {
+    await supabase.auth.signOut()
+    return { error: 'Tu cuenta se encuentra inactiva. Contacta al administrador.' }
+  }
+
+  if (profile.role === 'superadmin') {
+    redirect('/droguerias')
+  }
+
+  const headersList = await headers()
+  const rawHost = headersList.get('x-forwarded-host') || headersList.get('host')
+  const hostTenant = await resolveTenantWithSupabase(supabase, rawHost)
+
+  if (hostTenant && hostTenant.id !== profile.drogueria_id) {
+    await supabase.auth.signOut()
+    return {
+      error: `Esta cuenta no pertenece a ${hostTenant.nombre}. Ingresa desde el enlace de tu droguería.`,
+    }
+  }
+
+  const drogueriaRaw = Array.isArray(profile.drogueria)
+    ? profile.drogueria[0]
+    : profile.drogueria
+  const suspension = isTenantSuspended(drogueriaRaw)
+
+  if (suspension.suspended) {
+    await supabase.auth.signOut()
+    return {
+      error:
+        suspension.reason ||
+        'El servicio de tu droguería se encuentra suspendido. Contacta a administración.',
+    }
   }
 
   redirect('/dashboard')
@@ -39,7 +84,7 @@ export async function changeOwnPassword(password: string) {
   }
 
   const { error } = await supabase.auth.updateUser({
-    password: password
+    password: password,
   })
 
   if (error) {

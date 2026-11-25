@@ -4,6 +4,7 @@
 'use client'
 
 import React, { useState, useMemo, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Plus, Search, Package, Edit3, Info, Check,
   AlertCircle, Activity, History, TrendingUp, FileText,
@@ -12,8 +13,9 @@ import {
 import { format, isAfter, isBefore, addDays, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale/es'
 import { toast } from 'sonner'
-import { upsertInventario, buscarProductoPorCodigo, createLaboratorio, getAuditoria } from '@/app/actions/inventario'
+import { upsertInventario, createLaboratorio, getAuditoria } from '@/app/actions/inventario'
 import { Database } from '@/lib/supabase/database.types'
+import { calculatePV, formatCurrency } from '@/lib/utils'
 
 type InventarioRow = Database['public']['Views']['vista_inventario_completo']['Row']
 type LaboratorioRow = Database['public']['Tables']['laboratorios']['Row']
@@ -21,14 +23,6 @@ type LaboratorioRow = Database['public']['Tables']['laboratorios']['Row']
 interface InventarioClientProps {
   initialData: InventarioRow[]
   laboratorios: LaboratorioRow[]
-}
-
-// Función auxiliar global para el cálculo correcto del PV
-const calculatePV = (costo: number | string, margen: number | string) => {
-  const c = typeof costo === 'string' ? parseFloat(costo) : costo
-  const m = typeof margen === 'string' ? parseFloat(margen) : margen
-  if (isNaN(c) || isNaN(m) || m >= 100) return 0
-  return Math.round(c / (1 - (m / 100)))
 }
 
 // --- COMPONENTE NUMERICO MEJORADO ---
@@ -152,10 +146,14 @@ const PVPInput = ({ label, cost, margin, marginKey, setFormData, calculatePV }: 
 }
 
 export default function InventarioClient({ initialData, laboratorios }: InventarioClientProps) {
+  const router = useRouter()
   const [data, setData] = useState(initialData)
+
+  useEffect(() => {
+    setData(initialData)
+  }, [initialData])
   const [searchTerm, setSearchTerm] = useState('')
   const [filterType, setFilterType] = useState('todos')
-  const [labFilter, setLabFilter] = useState('todos')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [isAddingLab, setIsAddingLab] = useState(false)
@@ -215,9 +213,6 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
     const next3Months = addDays(today, 90)
     const tenDaysAgo = addDays(today, -10)
 
-    let totalVal = 0
-    let totalProfit = 0
-
     const performance = data.map(item => {
       const costoC = parseFloat(item.precio_caja as any) || 0
       const costoB = parseFloat(item.precio_blister as any) || 0
@@ -232,17 +227,19 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       const stockU = parseInt(item.unidades as any) || 0
 
       const val = (costoC * stockC) + (costoB * stockB) + (costoU * stockU)
-      totalVal += val
 
       const pvC = calculatePV(costoC, margenC)
       const pvB = calculatePV(costoB, margenB)
       const pvU = calculatePV(costoU, margenU)
 
       const profitItem = ((pvC - costoC) * stockC) + ((pvB - costoB) * stockB) + ((pvU - costoU) * stockU)
-      totalProfit += profitItem
 
-      return { name: item.nombre_producto, totalProfit: profitItem }
-    }).sort((a, b) => b.totalProfit - a.totalProfit)
+      return { name: item.nombre_producto, val, totalProfit: profitItem }
+    })
+
+    const totalVal = performance.reduce((acc, item) => acc + item.val, 0)
+    const totalProfit = performance.reduce((acc, item) => acc + item.totalProfit, 0)
+    const sortedPerformance = [...performance].sort((a, b) => b.totalProfit - a.totalProfit)
 
     const deadStock = data.filter(item => {
       if (!item.updated_at) return false
@@ -255,7 +252,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       lowStock: data.filter(item => (parseInt(item.cajas as any) || 0) <= (parseInt(item.stock_minimo as any) || 2)).length,
       expiringSoon: data.filter(item => item.fecha_vencimiento && isBefore(parseISO(item.fecha_vencimiento), next3Months)).length,
       inventoryValue: totalVal,
-      starProduct: performance[0]?.name || 'N/A',
+      starProduct: sortedPerformance[0]?.name || 'N/A',
       estimatedProfit: totalProfit,
       deadStock
     }
@@ -288,7 +285,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
 
   // --- EXPORTACIÓN ROBUSTA (COMPATIBILIDAD EXCEL TOTAL) ---
   const handleExport = () => {
-    const headers = ['CODIGO', 'PRODUCTO', 'LABORATORIO', 'SECCION', 'LOTE', 'INVIMA', 'VENCIMIENTO', 'STOCK_CAJAS', 'VALOR_COMPRA_TOTAL', 'VALOR_VENTA_ESTIMADO', 'MARGEN_%']
+    const headers = ['CODIGO', 'PRODUCTO', 'LABORATORIO', 'SECCION', 'UBICACION', 'LOTE', 'INVIMA', 'VENCIMIENTO', 'STOCK_CAJAS', 'VALOR_COMPRA_TOTAL', 'VALOR_VENTA_ESTIMADO', 'MARGEN_%']
 
     const csvRows = [
       "sep=;",
@@ -365,7 +362,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       if (result.success) {
         toast.success('Inventario guardado con éxito')
         setIsModalOpen(false)
-        window.location.reload()
+        router.refresh()
       } else {
         toast.error(result.error || 'Error al guardar')
       }
@@ -430,15 +427,18 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       {/* SEMÁFORO DE SALUD Y BI (Cards) */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 gap-4 lg:gap-6">
         {[
-          { label: 'VALOR DEL STOCK', val: `$${stats.inventoryValue.toLocaleString()}`, icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-50', filter: 'todos', sub: 'Capital Activo' },
-          { label: 'MARGEN ESPERADO', val: `$${stats.estimatedProfit.toLocaleString()}`, icon: Gem, color: 'text-emerald-600', bg: 'bg-emerald-50', filter: 'todos', sub: 'Ganancia Proyectada' },
+          { label: 'VALOR DEL STOCK', val: formatCurrency(stats.inventoryValue), icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-50', filter: 'todos', sub: 'Capital Activo' },
+          { label: 'MARGEN ESPERADO', val: formatCurrency(stats.estimatedProfit), icon: Gem, color: 'text-emerald-600', bg: 'bg-emerald-50', filter: 'todos', sub: 'Ganancia Proyectada' },
           { label: 'STOCK BAJO', val: stats.lowStock, icon: AlertCircle, color: 'text-rose-600', bg: 'bg-rose-50', filter: 'stock_bajo', sub: 'Requiere Pedido' },
           { label: 'VENCIMIENTO', val: stats.expiringSoon, icon: AlertCircle, color: 'text-amber-600', bg: 'bg-amber-50', filter: 'vencimiento', sub: 'Revisión Inmediata' },
           { label: 'STOCK MUERTO', val: stats.deadStock, icon: Activity, color: 'text-slate-600', bg: 'bg-slate-50', filter: 'dead_stock', sub: '10 Días Inactivo' },
         ].map((item, i) => (
           <button
             key={i}
-            onClick={() => setFilterType(filterType === item.filter ? 'todos' : item.filter)}
+            onClick={() => {
+              setFilterType(filterType === item.filter ? 'todos' : item.filter)
+              setCurrentPage(1)
+            }}
             className={`text-left p-5 lg:p-6 rounded-[2rem] lg:rounded-[2.5rem] border transition-all relative group h-full flex flex-col justify-between ${filterType === item.filter && item.filter !== 'todos' ? 'border-indigo-500 ring-[8px] ring-indigo-500/5 bg-white shadow-xl' : 'bg-white border-slate-100 hover:shadow-xl hover:-translate-y-1'}`}
           >
             <div className="flex flex-col items-start gap-4 mb-6 w-full">
@@ -469,7 +469,10 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
             </p>
           </div>
           <button
-            onClick={() => setFilterType('todos')}
+            onClick={() => {
+              setFilterType('todos')
+              setCurrentPage(1)
+            }}
             className="text-xs font-black text-indigo-600 hover:text-indigo-800 bg-white px-3 py-1.5 rounded-xl border border-indigo-200 shadow-sm transition-all active:scale-95"
           >
             Quitar Filtro ✕
@@ -486,7 +489,10 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
             placeholder="Escanear código de barras o buscar medicamento/sección..."
             className="w-full pl-14 lg:pl-20 pr-6 lg:pr-10 py-4 lg:py-6 bg-slate-50 border-none rounded-[2rem] lg:rounded-[2.5rem] text-base lg:text-lg font-bold focus:bg-white focus:ring-[10px] lg:focus:ring-[15px] focus:ring-indigo-600/5 transition-all outline-none shadow-inner"
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => {
+              setSearchTerm(e.target.value)
+              setCurrentPage(1)
+            }}
           />
         </div>
         <div className="flex flex-col sm:flex-row gap-3 lg:gap-4 w-full xl:w-auto">
@@ -593,17 +599,57 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                     </td>
 
                     <td className="px-8 py-4 text-right">
-                      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => openHistory(item)} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-amber-500 hover:text-white rounded-xl border border-slate-200 transition-all shadow-sm"><History className="w-4 h-4" /></button>
-                        <button onClick={() => { selectProduct(item); setIsModalOpen(true); }} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-slate-900 hover:text-white rounded-xl border border-slate-200 transition-all shadow-sm"><Edit3 className="w-4 h-4" /></button>
+                      <div className="flex justify-end gap-2 opacity-100 md:opacity-75 md:group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => openHistory(item)} aria-label="Ver historial" title="Historial de auditoría" className="w-8 h-8 flex items-center justify-center bg-white hover:bg-amber-500 hover:text-white rounded-xl border border-slate-200 transition-all shadow-sm"><History className="w-4 h-4" /></button>
+                        <button onClick={() => { selectProduct(item); setIsModalOpen(true); }} aria-label="Editar producto" title="Editar producto" className="w-8 h-8 flex items-center justify-center bg-white hover:bg-slate-900 hover:text-white rounded-xl border border-slate-200 transition-all shadow-sm"><Edit3 className="w-4 h-4" /></button>
                       </div>
                     </td>
                   </tr>
                 )
               })}
+              {paginatedData.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-8 py-12 text-center text-slate-400 font-bold">
+                    No se encontraron productos con los filtros actuales.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
+
+        {filteredData.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-6 lg:px-8 py-4 bg-slate-50/70 border-t border-slate-100">
+            <p className="text-xs font-bold text-slate-500">
+              Mostrando <span className="text-slate-900">{(currentPage - 1) * itemsPerPage + 1}</span>–
+              <span className="text-slate-900">{Math.min(currentPage * itemsPerPage, filteredData.length)}</span> de{' '}
+              <span className="text-slate-900">{filteredData.length}</span> productos
+            </p>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Anterior
+                </button>
+                <span className="text-xs font-black text-slate-700 px-2">
+                  Página {currentPage} de {totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage >= totalPages}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Siguiente
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* TERMINAL DE ABASTECIMIENTO ROBUSTA (Sidebar XXL) */}

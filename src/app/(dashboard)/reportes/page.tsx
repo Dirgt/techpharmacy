@@ -1,9 +1,13 @@
+import { redirect } from 'next/navigation'
+import { requireAdmin } from '@/lib/auth/session'
 import { getReporteFinancieroDiario, getIngresosGastosMensuales, getTopProductos } from '@/app/actions/reportes'
 import ReportesClient from './reportes-client'
 
 export const dynamic = 'force-dynamic'
 
 export default async function ReportesPage() {
+  const auth = await requireAdmin()
+  if (!auth.ok) redirect('/dashboard')
   const [reporteRes, chartRes, topRes] = await Promise.all([
     getReporteFinancieroDiario(),
     getIngresosGastosMensuales(),

@@ -8,7 +8,7 @@ export async function getSesionCajaAbierta() {
   const { data, error } = await supabase
     .from('caja_sesiones')
     .select('*')
-    .eq('estado', 'abierto')
+    .in('estado', ['abierto', 'abierta'])
     .order('fecha_apertura', { ascending: false })
     .limit(1)
     .single()
@@ -37,7 +37,7 @@ export async function abrirCaja(montoApertura: number) {
     .insert({
       abierto_por: user.id,
       monto_apertura: montoApertura,
-      estado: 'abierto'
+      estado: 'abierta'
     })
     .select()
     .single()
@@ -48,6 +48,8 @@ export async function abrirCaja(montoApertura: number) {
   }
 
   revalidatePath('/facturas')
+  revalidatePath('/compras')
+  revalidatePath('/reportes')
   return { success: true, caja: data }
 }
 
@@ -56,7 +58,7 @@ export async function cerrarCaja(cajaId: string, montoCierre: number) {
   const { error } = await supabase
     .from('caja_sesiones')
     .update({
-      estado: 'cerrado',
+      estado: 'cerrada',
       monto_cierre: montoCierre,
       fecha_cierre: new Date().toISOString()
     })
@@ -67,5 +69,7 @@ export async function cerrarCaja(cajaId: string, montoCierre: number) {
   }
 
   revalidatePath('/facturas')
+  revalidatePath('/compras')
+  revalidatePath('/reportes')
   return { success: true }
 }

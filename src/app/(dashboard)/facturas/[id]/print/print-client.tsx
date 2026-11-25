@@ -4,7 +4,24 @@
 import { useEffect } from 'react'
 import { Printer } from 'lucide-react'
 
-export default function PrintClient({ factura, detalles }: { factura: any, detalles: any[] }) {
+type DrogueriaInfo = {
+  id: string
+  nombre: string
+  nit: string | null
+  direccion: string | null
+  telefono: string | null
+  regimen: string | null
+} | null
+
+export default function PrintClient({
+  factura,
+  detalles,
+  drogueria,
+}: {
+  factura: any
+  detalles: any[]
+  drogueria?: DrogueriaInfo
+}) {
   useEffect(() => {
     // Optionally trigger print automatically
     // window.print()
@@ -40,7 +57,9 @@ export default function PrintClient({ factura, detalles }: { factura: any, detal
   // Totales basados exclusivamente en lo que se muestra en las filas
   const totalSinDescuentoCalculado = lineasCalculadas.reduce((acc, curr) => acc + curr.precioBaseRow, 0);
   const totalDescuentoCalculado = lineasCalculadas.reduce((acc, curr) => acc + curr.descuentoRow, 0);
-  const totalFinalCalculado = totalSinDescuentoCalculado - totalDescuentoCalculado;
+  const ivaCalculado = Number(factura.iva_total || 0);
+  const totalFinalCalculado = totalSinDescuentoCalculado - totalDescuentoCalculado + ivaCalculado;
+  const totalSinDescuentoConIva = totalSinDescuentoCalculado + ivaCalculado;
 
   return (
     <div className="w-full max-w-4xl mx-auto bg-white shadow-2xl print:shadow-none print:max-w-none rounded-2xl print:rounded-none overflow-hidden flex flex-col relative print:w-full print:max-w-[215mm] print:mx-auto">
@@ -78,10 +97,20 @@ export default function PrintClient({ factura, detalles }: { factura: any, detal
         {/* Header */}
         <div className="flex justify-between items-start border-b-2 border-slate-900 pb-6 mb-6 print:pb-2 print:mb-3">
           <div>
-            <h1 className="text-5xl print:text-3xl font-black tracking-tighter text-slate-900 mb-2 print:mb-0 leading-none">TechPharmacy</h1>
-            <p className="text-sm print:text-[10px] font-bold text-slate-500">NIT: 900.123.456-7 | Régimen Común</p>
-            <p className="text-sm print:text-[10px] font-bold text-slate-500">Sede Principal: Calle 123 # 45-67, Bogotá</p>
-            <p className="text-sm print:text-[10px] font-bold text-slate-500">Tel: (601) 555-0123</p>
+            <h1 className="text-5xl print:text-3xl font-black tracking-tighter text-slate-900 mb-2 print:mb-0 leading-none">
+              {drogueria?.nombre || 'TechPharmacy'}
+            </h1>
+            {(drogueria?.nit || drogueria?.regimen) && (
+              <p className="text-sm print:text-[10px] font-bold text-slate-500">
+                {[drogueria?.nit ? `NIT: ${drogueria.nit}` : null, drogueria?.regimen].filter(Boolean).join(' | ')}
+              </p>
+            )}
+            {drogueria?.direccion && (
+              <p className="text-sm print:text-[10px] font-bold text-slate-500">{drogueria.direccion}</p>
+            )}
+            {drogueria?.telefono && (
+              <p className="text-sm print:text-[10px] font-bold text-slate-500">Tel: {drogueria.telefono}</p>
+            )}
           </div>
           <div className="text-right">
             <h2 className="text-4xl print:text-2xl font-black text-indigo-600 tracking-tighter leading-none">FACTURA</h2>
@@ -206,14 +235,16 @@ export default function PrintClient({ factura, detalles }: { factura: any, detal
               <h4 className="text-amber-800 font-black text-xs print:text-[10px] uppercase mb-1 tracking-widest leading-none">⚠️ Condición de Pronto Pago</h4>
               <p className="text-amber-700 text-xs print:text-[10px] font-medium leading-tight">
                 Si paga antes o el mismo <span className="font-black text-amber-900">{new Date(factura.fecha_vencimiento).toLocaleDateString()}</span>, aplica su descuento del <span className="font-black text-amber-900">{factura.descuento_porcentaje}%</span> y solo paga <span className="font-black text-indigo-700">${totalFinalCalculado.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>.<br/>
-                De lo contrario, el total será <span className="font-black text-rose-600">${totalSinDescuentoCalculado.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>.
+                De lo contrario, el total será <span className="font-black text-rose-600">${totalSinDescuentoConIva.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>.
               </p>
             </div>
           )}
 
           <p className="text-[10px] print:text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1 print:mb-0.5">¡Gracias por su compra!</p>
           <p className="text-xs print:text-[10px] font-medium text-slate-500">Esta factura es un título valor según la ley colombiana.</p>
-          <p className="text-[9px] print:text-[8px] font-bold text-slate-400 mt-4 print:mt-1">Impreso por Sistema POS TechPharmacy</p>
+          <p className="text-[9px] print:text-[8px] font-bold text-slate-400 mt-4 print:mt-1">
+            Impreso por {drogueria?.nombre || 'TechPharmacy'} POS
+          </p>
         </div>
         
       </div>

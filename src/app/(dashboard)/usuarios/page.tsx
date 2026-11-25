@@ -1,9 +1,14 @@
 import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+import { requireAdmin } from '@/lib/auth/session'
 import { UserClient } from './user-client'
 
 export const dynamic = 'force-dynamic'
 
 export default async function UsuariosPage() {
+  const auth = await requireAdmin()
+  if (!auth.ok) redirect('/dashboard')
+
   const supabase = await createClient()
   
   const { data: usuarios } = await supabase

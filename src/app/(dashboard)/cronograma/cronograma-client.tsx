@@ -17,7 +17,6 @@ import {
   X,
   ArrowLeft,
   Printer,
-  FilterX,
   AlertTriangle,
   Download,
   Copy,
@@ -478,7 +477,7 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
                       <div className="flex justify-between items-center mb-4">
                         <span className={cn(
                           "text-2xl font-black transition-colors",
-                          isToday ? "text-emerald-600" : "text-slate-100 group-hover:text-slate-300"
+                          isToday ? "text-emerald-600" : "text-slate-400 group-hover:text-slate-700"
                         )}>
                           {day.getDate()}
                         </span>

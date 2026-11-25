@@ -2,7 +2,7 @@
 
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
 
-export function IngresosGastosChart({ data }: { data: any[] }) {
+export function IngresosGastosChart({ data }: { data: { fecha: string; ingresos: number; gastos: number }[] }) {
   return (
     <div className="h-[300px] w-full mt-4">
       <ResponsiveContainer width="100%" height="100%">
@@ -37,7 +37,7 @@ export function IngresosGastosChart({ data }: { data: any[] }) {
           <Tooltip 
             contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
             labelFormatter={(label) => `Fecha: ${label}`}
-            formatter={(value: any) => [`$${Number(value).toFixed(2)}`, '']}
+            formatter={(value) => [`$${Number(value ?? 0).toFixed(2)}`, '']}
           />
           <Area type="monotone" name="Ingresos" dataKey="ingresos" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorIngresos)" />
           <Area type="monotone" name="Gastos" dataKey="gastos" stroke="#ef4444" strokeWidth={3} fillOpacity={1} fill="url(#colorGastos)" />

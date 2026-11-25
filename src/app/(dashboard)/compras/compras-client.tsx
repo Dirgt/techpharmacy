@@ -1,14 +1,16 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Database } from '@/lib/supabase/database.types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { useBarcodeScanner } from '@/hooks/use-barcode-scanner'
-import { Plus, Search, FileText, Calendar, PlusCircle, Trash2, ShoppingCart, AlertCircle } from 'lucide-react'
+import { Plus, Search, FileText, PlusCircle, Trash2, ShoppingCart, AlertCircle } from 'lucide-react'
 import { registrarCompra } from '@/app/actions/tesoreria'
+import { formatCurrency } from '@/lib/utils'
 import {
   Dialog,
   DialogContent,
@@ -24,9 +26,17 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
+type CompraDetalle = {
+  id: string
+  cantidad: number
+  costo_unitario: number
+  subtotal: number
+  productos: { nombre: string; codigo: string } | null
+}
 type Compra = Database['public']['Tables']['compras']['Row'] & {
   proveedores: { nombre: string } | null,
-  caja_sesiones: { abierto_por: string } | null
+  caja_sesiones: { abierto_por: string } | null,
+  compra_detalles?: CompraDetalle[]
 }
 type Proveedor = Database['public']['Tables']['proveedores']['Row']
 type Producto = Database['public']['Tables']['productos']['Row']
@@ -38,24 +48,26 @@ export default function ComprasClient({
   productos,
   caja
 }: { 
-  initialData: any[],
+  initialData: Compra[],
   proveedores: Proveedor[],
   productos: Producto[],
   caja: Caja | null
 }) {
+  const router = useRouter()
   const [searchTerm, setSearchTerm] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [selectedCompra, setSelectedCompra] = useState<Compra | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   
   const [proveedorId, setProveedorId] = useState('')
   const [numeroFactura, setNumeroFactura] = useState('')
-  const [estadoPago, setEstadoPago] = useState('pendiente')
-  const [metodoPago, setMetodoPago] = useState('efectivo')
+  const [estadoPago, setEstadoPago] = useState<'pagado' | 'pendiente' | 'credito'>('pendiente')
+  const [metodoPago, setMetodoPago] = useState<'efectivo' | 'transferencia' | 'tarjeta'>('efectivo')
   const [detalles, setDetalles] = useState<{producto_id: string, cantidad: number, costo_unitario: number}[]>([])
 
   const filteredData = initialData.filter(c => 
-    c.numero_factura.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    c.proveedores?.nombre.toLowerCase().includes(searchTerm.toLowerCase())
+    (c.numero_factura || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (c.proveedores?.nombre || '').toLowerCase().includes(searchTerm.toLowerCase())
   )
 
   useBarcodeScanner((barcode) => {
@@ -89,7 +101,11 @@ export default function ComprasClient({
     setDetalles(newDetalles)
   }
 
-  const handleDetalleChange = (index: number, field: string, value: any) => {
+  const handleDetalleChange = (
+    index: number,
+    field: 'producto_id' | 'cantidad' | 'costo_unitario',
+    value: string | number
+  ) => {
     const newDetalles = [...detalles]
     newDetalles[index] = { ...newDetalles[index], [field]: value }
     setDetalles(newDetalles)
@@ -106,7 +122,7 @@ export default function ComprasClient({
     if (detalles.length === 0) return toast.error('Agregue al menos un producto a la compra')
     if (detalles.some(d => !d.producto_id)) return toast.error('Seleccione los productos en los detalles')
 
-    if (estadoPago === 'pagado' && metodoPago === 'efectivo' && (!caja || caja.estado !== 'abierta')) {
+    if (estadoPago === 'pagado' && metodoPago === 'efectivo' && (!caja || !['abierta', 'abierto'].includes(caja.estado || ''))) {
       return toast.error('No hay caja abierta para realizar el pago en efectivo')
     }
 
@@ -117,8 +133,8 @@ export default function ComprasClient({
       proveedor_id: proveedorId,
       numero_factura: numeroFactura,
       total,
-      estado_pago: estadoPago as any,
-      metodo_pago: metodoPago as any,
+      estado_pago: estadoPago,
+      metodo_pago: metodoPago,
       caja_sesion_id: caja?.id || null,
       detalles: detalles
     })
@@ -132,6 +148,7 @@ export default function ComprasClient({
       setEstadoPago('pendiente')
       setMetodoPago('efectivo')
       setDetalles([])
+      router.refresh()
     } else {
       toast.error(result.error || 'Error al registrar compra')
     }
@@ -205,7 +222,7 @@ export default function ComprasClient({
 
                 <div className="space-y-2">
                   <Label>Estado de Pago</Label>
-                  <Select value={estadoPago} onValueChange={setEstadoPago}>
+                  <Select value={estadoPago} onValueChange={(val) => setEstadoPago(val as 'pagado' | 'pendiente' | 'credito')}>
                     <SelectTrigger className="bg-white">
                       <SelectValue />
                     </SelectTrigger>
@@ -220,7 +237,7 @@ export default function ComprasClient({
                 {estadoPago === 'pagado' && (
                   <div className="space-y-2">
                     <Label>Método de Pago</Label>
-                    <Select value={metodoPago} onValueChange={setMetodoPago}>
+                    <Select value={metodoPago} onValueChange={(val) => setMetodoPago(val as 'efectivo' | 'transferencia' | 'tarjeta')}>
                       <SelectTrigger className="bg-white">
                         <SelectValue />
                       </SelectTrigger>
@@ -284,7 +301,7 @@ export default function ComprasClient({
                             />
                           </td>
                           <td className="px-4 py-2 font-medium text-slate-700">
-                            ${(det.cantidad * det.costo_unitario).toFixed(2)}
+                            {formatCurrency(det.cantidad * det.costo_unitario)}
                           </td>
                           <td className="px-4 py-2 text-center">
                             <Button type="button" variant="ghost" size="icon" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => handleRemoveDetalle(index)}>
@@ -306,7 +323,7 @@ export default function ComprasClient({
 
                 <div className="flex justify-end pt-2">
                   <div className="text-xl font-bold text-slate-800 bg-slate-100 px-4 py-2 rounded-lg inline-flex items-center">
-                    Total: <span className="text-indigo-600 ml-2">${calcularTotal().toFixed(2)}</span>
+                    Total: <span className="text-indigo-600 ml-2">{formatCurrency(calcularTotal())}</span>
                   </div>
                 </div>
               </div>
@@ -371,7 +388,7 @@ export default function ComprasClient({
                 filteredData.map((compra) => (
                   <tr key={compra.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-6 py-4 text-slate-600">
-                      {new Date(compra.created_at).toLocaleDateString()}
+                      {compra.created_at ? new Date(compra.created_at).toLocaleDateString() : '-'}
                     </td>
                     <td className="px-6 py-4 font-medium text-slate-900">
                       #{compra.numero_factura}
@@ -380,7 +397,7 @@ export default function ComprasClient({
                       {compra.proveedores?.nombre}
                     </td>
                     <td className="px-6 py-4 font-semibold text-slate-900">
-                      ${Number(compra.total).toFixed(2)}
+                      {formatCurrency(compra.total)}
                     </td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
@@ -392,7 +409,12 @@ export default function ComprasClient({
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <Button variant="ghost" size="sm" className="text-slate-400 hover:text-indigo-600">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-slate-500 hover:text-indigo-600"
+                        onClick={() => setSelectedCompra(compra)}
+                      >
                         Ver Detalles
                       </Button>
                     </td>
@@ -409,6 +431,80 @@ export default function ComprasClient({
           </table>
         </div>
       </div>
+
+      {/* Modal Detalles de Compra */}
+      <Dialog open={!!selectedCompra} onOpenChange={(open) => { if (!open) setSelectedCompra(null) }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-indigo-600" />
+              Compra Factura #{selectedCompra?.numero_factura}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedCompra && (
+            <div className="space-y-4 mt-2">
+              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 text-sm">
+                <div>
+                  <p className="text-xs font-bold text-slate-400 uppercase">Proveedor</p>
+                  <p className="font-semibold text-slate-900">{selectedCompra.proveedores?.nombre || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-400 uppercase">Fecha</p>
+                  <p className="font-semibold text-slate-900">
+                    {selectedCompra.created_at ? new Date(selectedCompra.created_at).toLocaleString() : '-'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-400 uppercase">Estado / Método</p>
+                  <p className="font-semibold text-slate-900 capitalize">
+                    {selectedCompra.estado_pago} {selectedCompra.metodo_pago ? `(${selectedCompra.metodo_pago})` : ''}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-400 uppercase">Total Factura</p>
+                  <p className="font-bold text-indigo-600 text-lg">{formatCurrency(selectedCompra.total)}</p>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 overflow-hidden">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-50 text-xs text-slate-500 uppercase border-b border-slate-200">
+                    <tr>
+                      <th className="px-4 py-2">Producto</th>
+                      <th className="px-4 py-2 text-right">Cajas</th>
+                      <th className="px-4 py-2 text-right">Costo Unit.</th>
+                      <th className="px-4 py-2 text-right">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {selectedCompra.compra_detalles && selectedCompra.compra_detalles.length > 0 ? (
+                      selectedCompra.compra_detalles.map((det) => (
+                        <tr key={det.id}>
+                          <td className="px-4 py-2 font-medium text-slate-900">
+                            {det.productos?.nombre || 'Producto'}
+                            {det.productos?.codigo && (
+                              <span className="ml-2 text-xs text-slate-400">({det.productos.codigo})</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2 text-right">{det.cantidad}</td>
+                          <td className="px-4 py-2 text-right">{formatCurrency(det.costo_unitario)}</td>
+                          <td className="px-4 py-2 text-right font-semibold">{formatCurrency(det.subtotal)}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-6 text-center text-slate-400">
+                          Sin detalles registrados para esta compra.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

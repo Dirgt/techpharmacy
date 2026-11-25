@@ -5,21 +5,31 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import { Search, Plus, Minus, Trash2, ShoppingCart, Wallet, ReceiptText, CheckCircle2, BarChart2, FileDown, RefreshCw, ChevronDown, X, Building2, Lock } from 'lucide-react'
 import { toast } from 'sonner'
-import { crearFactura, FacturaData, FacturaItem, marcarComoPagada } from '@/app/actions/facturas'
+import { crearFactura, FacturaData, FacturaItem, getCartera, marcarComoPagada } from '@/app/actions/facturas'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { abrirCaja, cerrarCaja } from '@/app/actions/caja'
 import { GastoModal } from '@/components/tesoreria/gasto-modal'
 import { useBarcodeScanner } from '@/hooks/use-barcode-scanner'
+import { calculatePV, formatCurrency } from '@/lib/utils'
+
+const calculateLinePrice = (productDef: any, cajas: number, blisters: number, unidades: number) => {
+  const pvpCaja = calculatePV(productDef.precio_caja, productDef.margen_caja ?? productDef.porcentaje_ganancia ?? 0)
+  const pvpBlister = calculatePV(productDef.precio_blister, productDef.margen_blister ?? 0)
+  const pvpUnidad = calculatePV(productDef.precio_unidad, productDef.margen_unidad ?? 0)
+  return (pvpCaja * cajas) + (pvpBlister * blisters) + (pvpUnidad * unidades)
+}
 
 export function FacturacionClient({ 
   inventarioInitial, 
   vendedores,
-  cajaAbierta
+  cajaAbierta,
+  carteraInitial = [],
 }: { 
   inventarioInitial: any[],
   vendedores: any[],
-  cajaAbierta: any
+  cajaAbierta: any,
+  carteraInitial?: any[],
 }) {
   const router = useRouter()
   
@@ -52,6 +62,9 @@ export function FacturacionClient({
   const [isOpeningCaja, setIsOpeningCaja] = useState(false)
   const [montoApertura, setMontoApertura] = useState('0')
   const [ventasHoy, setVentasHoy] = useState<any[]>([])
+  const [cartera, setCartera] = useState<any[]>(carteraInitial)
+  const [gastosSesion, setGastosSesion] = useState<any[]>([])
+  const [comprasEfectivoSesion, setComprasEfectivoSesion] = useState<any[]>([])
   const [loadingVentas, setLoadingVentas] = useState(false)
   const [subTabVentas, setSubTabVentas] = useState<'historial' | 'cartera'>('historial')
   const [expandedFacturaId, setExpandedFacturaId] = useState<string | null>(null)
@@ -83,156 +96,7 @@ export function FacturacionClient({
     fetchNextFacturaNum()
   }, [])
 
-  useBarcodeScanner((barcode) => {
-    // Only process if we are in POS tab and not currently interacting with an input
-    if (activeTab !== 'pos') return
-    
-    // Check if the barcode matches any product in inventarioInitial (using codigo_producto)
-    const product = inventarioInitial.find(p => p.codigo_producto === barcode)
-    
-    if (product) {
-      addToCart(product)
-    } else {
-      toast.error(`Producto no encontrado (Código: ${barcode})`)
-    }
-  })
-
-  const ventasFiltradas = useMemo(() => {
-    if (filterMethod === 'todos') return ventasHoy
-    return ventasHoy.filter(v => v.metodo_pago === filterMethod)
-  }, [ventasHoy, filterMethod])
-
-  const ventasCreditoPendientes = useMemo(() => 
-    ventasFiltradas.filter(f => f.tipo_venta === 'credito' && f.estado_pago === 'pendiente')
-  , [ventasFiltradas])
-
-  // --- DERIVED STATE ---
-  const searchResults = useMemo(() => {
-    if (!searchTerm.trim()) return []
-    const term = searchTerm.toLowerCase()
-    return inventarioInitial.filter(item => 
-      item.nombre_producto?.toLowerCase().includes(term) ||
-      item.codigo_producto?.toLowerCase().includes(term) ||
-      item.laboratorio_nombre?.toLowerCase().includes(term) ||
-      item.principio_activo?.toLowerCase().includes(term) ||
-      item.seccion?.toLowerCase().includes(term)
-    ).slice(0, 10) // Limit to 10 for performance
-  }, [searchTerm, inventarioInitial])
-
-  // cartTotal = suma bruta sin descuento ni IVA
-  const cartSubtotalBruto = useMemo(() =>
-    cart.reduce((sum, item) => sum + item.precio_unitario_base, 0)
-  , [cart])
-
-  const cartDescuentoMonto = useMemo(() =>
-    cart.reduce((sum, item) => sum + (item.precio_unitario_base - item.precio_linea), 0)
-  , [cart])
-
-  const cartBaseIva = useMemo(() => cartSubtotalBruto - cartDescuentoMonto, [cartSubtotalBruto, cartDescuentoMonto])
-
-  const cartIvaMonto = useMemo(() =>
-    Math.round(cartBaseIva * (ivaPct / 100))
-  , [cartBaseIva, ivaPct])
-
-  const cartTotal = useMemo(() => cartBaseIva + cartIvaMonto, [cartBaseIva, cartIvaMonto])
-  
-  const vueltas = useMemo(() => {
-    const recibido = Number(efectivoRecibido.replace(/\D/g, '')) || 0;
-    return Math.max(0, recibido - cartTotal);
-  }, [efectivoRecibido, cartTotal])
-
-  const kpisVentas = useMemo(() => {
-    let total = 0, efectivo = 0, tarjeta = 0, transferencia = 0
-    ventasHoy.forEach(f => {
-      const t = Number(f.total) || 0
-      total += t
-      if (f.metodo_pago === 'efectivo') efectivo += t
-      else if (f.metodo_pago === 'tarjeta') tarjeta += t
-      else transferencia += t
-    })
-    return { total, efectivo, tarjeta, transferencia, count: ventasHoy.length, promedio: ventasHoy.length > 0 ? total / ventasHoy.length : 0 }
-  }, [ventasHoy])
-
-  const topProductos = useMemo(() => {
-    const map = new Map<string, { nombre: string, total: number, count: number }>()
-    ventasHoy.forEach(f => {
-      f.detalles?.forEach((d: any) => {
-        const prodId = d.producto_id
-        const current = map.get(prodId) || { nombre: d.producto?.nombre || 'Producto', total: 0, count: 0 }
-        current.count += (d.cantidad_cajas || 0) + (d.cantidad_blisters || 0) + (d.cantidad_unidades || 0)
-        current.total += Number(d.precio_unitario) || 0
-        map.set(prodId, current)
-      })
-    })
-    return Array.from(map.values()).sort((a, b) => b.count - a.count).slice(0, 5)
-  }, [ventasHoy])
-
-  const fetchVentas = useCallback(async () => {
-    setLoadingVentas(true)
-    try {
-      if (!cajaAbierta?.id) return
-      // Llamada directa a la API Route con cache desactivado para garantizar datos frescos
-      const res = await fetch(`/api/ventas-sesion?cajaId=${cajaAbierta.id}`, { cache: 'no-store' })
-      const json = await res.json()
-      if (json.success) {
-        setVentasHoy(json.data)
-      } else {
-        toast.error('Error cargando ventas')
-      }
-    } catch {
-      toast.error('Error de conexión al cargar ventas')
-    }
-    setLoadingVentas(false)
-  }, [])
-
-  useEffect(() => {
-    if (activeTab === 'ventas') fetchVentas()
-  }, [activeTab, fetchVentas])
-
-  // Auto-aplicar descuento y crédito cuando se selecciona cliente tipo distribuidor
-  useEffect(() => {
-    if (clienteSelected?.tipo_cliente === 'distribuidor') {
-      setDescuentoPct(10)
-      setTipoVenta('credito')
-      setCondicionPagoDias(30)
-      toast.info('Cliente Distribuidor: Descuento 10% y Crédito 30d auto-aplicados')
-    } else {
-      // Opcional: resetear al cambiar a cliente normal
-      setDescuentoPct(0)
-      setTipoVenta('contado')
-      setCondicionPagoDias(0)
-    }
-  }, [clienteSelected])
-
-  // Recalcular precios de cada item en el carrito cuando cambia el descuento global
-  useEffect(() => {
-    setCart(prev => prev.map(item => {
-      if (item.descuento_porcentaje === descuentoPct) return item;
-      return {
-        ...item,
-        descuento_porcentaje: descuentoPct,
-        precio_linea: item.precio_unitario_base * (1 - (descuentoPct / 100))
-      }
-    }))
-  }, [descuentoPct])
-
-  const exportarCSV = () => {
-    if (ventasHoy.length === 0) return
-    const header = 'Factura,Fecha,Vendedor,Cliente,Documento,Metodo,Total'
-    const rows = ventasHoy.map(f =>
-      `${f.numero},"${new Date(f.created_at).toLocaleString()}","${f.vendedor?.full_name || 'N/A'}","${f.cliente_nombre}","${f.cliente_documento}","${f.metodo_pago}",${f.total}`
-    ).join('\n')
-    const uri = "data:text/csv;charset=utf-8," + encodeURI(header + '\n' + rows)
-    const link = document.createElement('a')
-    link.href = uri
-    link.download = `ventas_${new Date().toISOString().split('T')[0]}.csv`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-  }
-
-  // --- HANDLERS ---
-  const addToCart = (product: any) => {
+  const addToCart = useCallback((product: any) => {
     setCart(prev => {
       const existing = prev.find(item => item.producto_id === product.producto_id)
       
@@ -282,8 +146,187 @@ export function FacturacionClient({
     })
     setSearchTerm('')
     toast.success(`${product.nombre_producto} agregado al carrito`)
+  }, [descuentoPct])
+
+  useBarcodeScanner((barcode) => {
+    // Only process if we are in POS tab and not currently interacting with an input
+    if (activeTab !== 'pos') return
+    
+    // Check if the barcode matches any product in inventarioInitial
+    const product = inventarioInitial.find(p => (p.codigo || p.codigo_producto) === barcode)
+    
+    if (product) {
+      addToCart(product)
+    } else {
+      toast.error(`Producto no encontrado (Código: ${barcode})`)
+    }
+  })
+
+  const ventasFiltradas = useMemo(() => {
+    if (filterMethod === 'todos') return ventasHoy
+    return ventasHoy.filter(v => v.metodo_pago === filterMethod)
+  }, [ventasHoy, filterMethod])
+
+  const carteraPendiente = useMemo(
+    () => cartera.filter(f => f.tipo_venta === 'credito' && f.estado_pago === 'pendiente'),
+    [cartera]
+  )
+
+  // --- DERIVED STATE ---
+  const searchResults = useMemo(() => {
+    if (!searchTerm.trim()) return []
+    const term = searchTerm.toLowerCase()
+    return inventarioInitial.filter(item => 
+      item.nombre_producto?.toLowerCase().includes(term) ||
+      (item.codigo || item.codigo_producto)?.toLowerCase().includes(term) ||
+      (item.laboratorio || item.laboratorio_nombre)?.toLowerCase().includes(term) ||
+      item.principio_activo?.toLowerCase().includes(term) ||
+      item.seccion?.toLowerCase().includes(term)
+    ).slice(0, 10) // Limit to 10 for performance
+  }, [searchTerm, inventarioInitial])
+
+  // cartTotal = suma bruta sin descuento ni IVA
+  const cartSubtotalBruto = useMemo(() =>
+    cart.reduce((sum, item) => sum + item.precio_unitario_base, 0)
+  , [cart])
+
+  const cartDescuentoMonto = useMemo(() =>
+    cart.reduce((sum, item) => sum + (item.precio_unitario_base - item.precio_linea), 0)
+  , [cart])
+
+  const cartBaseIva = useMemo(() => cartSubtotalBruto - cartDescuentoMonto, [cartSubtotalBruto, cartDescuentoMonto])
+
+  const cartIvaMonto = useMemo(() =>
+    Math.round(cartBaseIva * (ivaPct / 100))
+  , [cartBaseIva, ivaPct])
+
+  const cartTotal = useMemo(() => cartBaseIva + cartIvaMonto, [cartBaseIva, cartIvaMonto])
+  
+  const vueltas = useMemo(() => {
+    const recibido = Number(efectivoRecibido.replace(/\D/g, '')) || 0;
+    return Math.max(0, recibido - cartTotal);
+  }, [efectivoRecibido, cartTotal])
+
+  const kpisVentas = useMemo(() => {
+    let total = 0, efectivo = 0, tarjeta = 0, transferencia = 0
+    ventasHoy.forEach(f => {
+      const t = Number(f.total) || 0
+      total += t
+      if (f.estado_pago === 'pagado') {
+        if (f.metodo_pago === 'efectivo') efectivo += t
+        else if (f.metodo_pago === 'tarjeta') tarjeta += t
+        else transferencia += t
+      }
+    })
+    return { total, efectivo, tarjeta, transferencia, count: ventasHoy.length, promedio: ventasHoy.length > 0 ? total / ventasHoy.length : 0 }
+  }, [ventasHoy])
+
+  const totalGastosSesion = useMemo(
+    () => gastosSesion.reduce((sum, g) => sum + (Number(g.monto) || 0), 0),
+    [gastosSesion]
+  )
+  const totalComprasEfectivoSesion = useMemo(
+    () => comprasEfectivoSesion.reduce((sum, c) => sum + (Number(c.total) || 0), 0),
+    [comprasEfectivoSesion]
+  )
+  const totalEgresosEfectivoSesion = totalGastosSesion + totalComprasEfectivoSesion
+  const totalEsperadoCaja = (Number(cajaAbierta?.monto_apertura) || 0) + kpisVentas.efectivo - totalEgresosEfectivoSesion
+
+  const topProductos = useMemo(() => {
+    const map = new Map<string, { nombre: string, total: number, count: number }>()
+    ventasHoy.forEach(f => {
+      f.detalles?.forEach((d: any) => {
+        const prodId = d.producto_id
+        const current = map.get(prodId) || { nombre: d.producto?.nombre || 'Producto', total: 0, count: 0 }
+        current.count += (d.cantidad_cajas || 0) + (d.cantidad_blisters || 0) + (d.cantidad_unidades || 0)
+        current.total += Number(d.precio_unitario) || 0
+        map.set(prodId, current)
+      })
+    })
+    return Array.from(map.values()).sort((a, b) => b.count - a.count).slice(0, 5)
+  }, [ventasHoy])
+
+  const cajaId = cajaAbierta?.id
+
+  const fetchVentas = useCallback(async () => {
+    if (!cajaId) return
+    setLoadingVentas(true)
+    try {
+      // Llamada directa a la API Route con cache desactivado + cartera global
+      const [res, carteraData] = await Promise.all([
+        fetch(`/api/ventas-sesion?cajaId=${cajaId}`, { cache: 'no-store' }),
+        getCartera(),
+      ])
+      const json = await res.json()
+      if (json.success) {
+        setVentasHoy(json.data || [])
+        setGastosSesion(json.gastos || [])
+        setComprasEfectivoSesion(json.comprasEfectivo || [])
+      } else {
+        toast.error('Error cargando ventas')
+      }
+      if (Array.isArray(carteraData)) {
+        setCartera(carteraData)
+      }
+    } catch {
+      toast.error('Error de conexión al cargar ventas')
+    }
+    setLoadingVentas(false)
+  }, [cajaId])
+
+  useEffect(() => {
+    if (cajaId) {
+      fetchVentas()
+    }
+  }, [cajaId, fetchVentas])
+
+  useEffect(() => {
+    if (activeTab === 'ventas' || showCloseCajaModal) fetchVentas()
+  }, [activeTab, showCloseCajaModal, fetchVentas])
+
+  // Auto-aplicar descuento y crédito cuando se selecciona cliente tipo distribuidor
+  useEffect(() => {
+    if (clienteSelected?.tipo_cliente === 'distribuidor') {
+      setDescuentoPct(10)
+      setTipoVenta('credito')
+      setCondicionPagoDias(30)
+      toast.info('Cliente Distribuidor: Descuento 10% y Crédito 30d auto-aplicados')
+    } else {
+      // Opcional: resetear al cambiar a cliente normal
+      setDescuentoPct(0)
+      setTipoVenta('contado')
+      setCondicionPagoDias(0)
+    }
+  }, [clienteSelected])
+
+  // Recalcular precios de cada item en el carrito cuando cambia el descuento global
+  useEffect(() => {
+    setCart(prev => prev.map(item => {
+      if (item.descuento_porcentaje === descuentoPct) return item;
+      return {
+        ...item,
+        descuento_porcentaje: descuentoPct,
+        precio_linea: item.precio_unitario_base * (1 - (descuentoPct / 100))
+      }
+    }))
+  }, [descuentoPct])
+
+  const exportarCSV = () => {
+    if (ventasHoy.length === 0) return
+    const header = 'Factura,Fecha,Vendedor,Cliente,Documento,Metodo,Total'
+    const rows = ventasHoy.map(f =>
+      `${f.numero},"${new Date(f.created_at).toLocaleString()}","${f.vendedor?.full_name || 'N/A'}","${f.cliente_nombre}","${f.cliente_documento}","${f.metodo_pago}",${f.total}`
+    ).join('\n')
+    const uri = "data:text/csv;charset=utf-8," + encodeURI(header + '\n' + rows)
+    const link = document.createElement('a')
+    link.href = uri
+    link.download = `ventas_${new Date().toISOString().split('T')[0]}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
   }
 
+  // --- HANDLERS ---
   const updateQuantity = (producto_id: string, field: 'cantidad_cajas' | 'cantidad_blisters' | 'cantidad_unidades', value: number) => {
     if (value < 0) return
 
@@ -307,13 +350,6 @@ export function FacturacionClient({
 
   const removeFromCart = (producto_id: string) => {
     setCart(prev => prev.filter(item => item.producto_id !== producto_id))
-  }
-
-  const calculateLinePrice = (productDef: any, cajas: number, blisters: number, unidades: number) => {
-    const pc = Number(productDef.precio_caja || 0) * cajas
-    const pb = Number(productDef.precio_blister || 0) * blisters
-    const pu = Number(productDef.precio_unidad || 0) * unidades
-    return pc + pb + pu
   }
 
   const handleProcessSale = async () => {
@@ -483,7 +519,7 @@ export function FacturacionClient({
               <FileDown className="w-4 h-4" />
               Exportar CSV
             </button>
-            <GastoModal cajaAbierta={cajaAbierta} />
+            <GastoModal cajaAbierta={cajaAbierta} onGastoRegistrado={fetchVentas} />
             <button onClick={() => setShowCloseCajaModal(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 text-sm font-black transition-all active:scale-95 ml-2">
               <Lock className="w-4 h-4" />
               Cerrar Caja
@@ -525,10 +561,10 @@ export function FacturacionClient({
                       <div>
                         <h4 className="font-black text-slate-900 text-sm group-hover:text-indigo-600 transition-colors">{item.nombre_producto}</h4>
                         {item.principio_activo && <p className="text-[10px] text-indigo-500 font-bold mb-0.5 mt-0.5 bg-indigo-50 inline-block px-1.5 py-0.5 rounded">Molécula: {item.principio_activo}</p>}
-                        <p className="text-xs font-bold text-slate-400">{item.laboratorio_nombre} • {item.codigo_producto}</p>
+                        <p className="text-xs font-bold text-slate-400">{item.laboratorio || item.laboratorio_nombre} • {item.codigo || item.codigo_producto}</p>
                       </div>
                       <div className="text-right shrink-0 ml-4">
-                        <p className="text-emerald-600 font-black text-sm">${Number(item.precio_unidad || 0).toLocaleString()} <span className="text-[10px] text-slate-400">/u</span></p>
+                        <p className="text-emerald-600 font-black text-sm">${calculatePV(item.precio_unidad || 0, item.margen_unidad || 0).toLocaleString()} <span className="text-[10px] text-slate-400">/u</span></p>
                         <p className="text-[10px] font-bold text-slate-400">Stock: {item.cajas}C / {item.blisters}B / {item.unidades}U</p>
                       </div>
                     </button>
@@ -1088,19 +1124,22 @@ export function FacturacionClient({
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="bg-slate-50">
-                      {['Factura', 'Cliente', 'Vencimiento', 'Estado', 'Saldo'].map(h => (
+                      {['Factura', 'Cliente', 'Vencimiento', 'Estado', 'Saldo', 'Acción'].map(h => (
                         <th key={h} className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {ventasCreditoPendientes.length === 0 ? (
-                      <tr><td colSpan={5} className="py-20 text-center text-slate-300 font-black">No hay créditos pendientes</td></tr>
+                    {carteraPendiente.length === 0 ? (
+                      <tr><td colSpan={6} className="py-20 text-center text-slate-300 font-black">No hay créditos pendientes</td></tr>
                     ) : (
-                      ventasCreditoPendientes.map(f => {
-                        const diasVencido = Math.floor((new Date().getTime() - new Date(f.fecha_vencimiento).getTime()) / (1000 * 3600 * 24))
-                        const esVencido = new Date(f.fecha_vencimiento) < new Date()
-                        const totalSinDescuento = Number(f.total) + Number(f.descuento_monto || 0)
+                      carteraPendiente.map(f => {
+                        const esVencido = f.estado_plazo === 'vencido' || (f.fecha_vencimiento ? new Date(f.fecha_vencimiento) < new Date() : false)
+                        const diasRestantes = typeof f.dias_restantes === 'number'
+                          ? f.dias_restantes
+                          : Math.ceil((new Date(f.fecha_vencimiento).getTime() - new Date().getTime()) / (1000 * 3600 * 24))
+                        const totalConDescuento = Number(f.total_con_descuento ?? f.total ?? 0)
+                        const totalSinDescuento = Number(f.total_sin_descuento ?? (totalConDescuento + Number(f.descuento_monto || 0)))
                       
                       return (
                         <tr key={f.id} className="hover:bg-slate-50/50 transition-colors">
@@ -1111,10 +1150,10 @@ export function FacturacionClient({
                           </td>
                           <td className="px-5 py-3">
                             <p className={`font-bold ${esVencido ? 'text-rose-600' : 'text-slate-600'}`}>
-                              {new Date(f.fecha_vencimiento).toLocaleDateString()}
+                              {f.fecha_vencimiento ? new Date(f.fecha_vencimiento).toLocaleDateString() : '-'}
                             </p>
                             <p className="text-[10px] text-slate-400 font-bold">
-                              {esVencido ? `⚠️ Vencido hace ${diasVencido}d` : `✅ Vence en ${-diasVencido}d`}
+                              {esVencido ? `⚠️ Vencido hace ${Math.abs(diasRestantes)}d` : `✅ Vence en ${Math.max(0, diasRestantes)}d`}
                             </p>
                           </td>
                           <td className="px-5 py-3">
@@ -1125,15 +1164,35 @@ export function FacturacionClient({
                           <td className="px-5 py-3">
                             {esVencido ? (
                               <div className="flex flex-col">
-                                <span className="text-rose-600 font-black text-base">${totalSinDescuento.toLocaleString()}</span>
-                                <span className="text-[9px] text-slate-400 line-through font-bold">Base: ${Number(f.total).toLocaleString()}</span>
+                                <span className="text-rose-600 font-black text-base">{formatCurrency(totalSinDescuento)}</span>
+                                <span className="text-[9px] text-slate-400 line-through font-bold">Base: {formatCurrency(totalConDescuento)}</span>
                               </div>
                             ) : (
                               <div className="flex flex-col">
-                                <span className="text-emerald-600 font-black text-base">${Number(f.total).toLocaleString()}</span>
-                                <span className="text-[9px] text-indigo-400 font-bold">Ahorro: ${Number(f.descuento_monto).toLocaleString()}</span>
+                                <span className="text-emerald-600 font-black text-base">{formatCurrency(totalConDescuento)}</span>
+                                <span className="text-[9px] text-indigo-400 font-bold">Ahorro: {formatCurrency(f.descuento_monto)}</span>
                               </div>
                             )}
+                          </td>
+                          <td className="px-5 py-3">
+                            <button
+                              onClick={async () => {
+                                if (!cajaAbierta) { toast.error('Abre caja para registrar el cobro'); return }
+                                const monto = esVencido ? totalSinDescuento : totalConDescuento
+                                if (!window.confirm(`¿Registrar cobro de ${formatCurrency(monto)} para la factura #${f.numero}?`)) return
+                                const res = await marcarComoPagada(f.id, cajaAbierta.id, 'efectivo')
+                                if (res.success) {
+                                  toast.success('Cobro registrado correctamente')
+                                  await fetchVentas()
+                                  router.refresh()
+                                } else {
+                                  toast.error(res.error || 'Error al registrar cobro')
+                                }
+                              }}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black rounded-lg shadow-sm transition-all uppercase"
+                            >
+                              Cobrar
+                            </button>
                           </td>
                         </tr>
                       )
@@ -1201,9 +1260,17 @@ export function FacturacionClient({
                 <span className="text-slate-500 font-bold">Ventas en Efectivo</span>
                 <span className="font-black text-emerald-600">+ ${kpisVentas.efectivo.toLocaleString()}</span>
               </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500 font-bold">Gastos en Efectivo</span>
+                <span className="font-black text-rose-600">- ${totalGastosSesion.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500 font-bold">Compras en Efectivo</span>
+                <span className="font-black text-rose-600">- ${totalComprasEfectivoSesion.toLocaleString()}</span>
+              </div>
               <div className="pt-3 border-t border-slate-200 flex justify-between items-center">
-                <span className="text-slate-900 font-black uppercase text-xs">Total Esperado</span>
-                <span className="font-black text-xl text-indigo-600">${(Number(cajaAbierta.monto_apertura) + kpisVentas.efectivo).toLocaleString()}</span>
+                <span className="text-slate-900 font-black uppercase text-xs">Total Esperado en Gaveta</span>
+                <span className="font-black text-xl text-indigo-600">${totalEsperadoCaja.toLocaleString()}</span>
               </div>
             </div>
 
