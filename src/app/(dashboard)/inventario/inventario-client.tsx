@@ -8,23 +8,27 @@ import { useRouter } from 'next/navigation'
 import {
   Plus, Search, Package, Edit3, Info, Check,
   AlertCircle, Activity, History, TrendingUp, FileText,
-  ArrowDownCircle, Gem, MousePointer2, Calculator, Upload, Download
+  ArrowDownCircle, Gem, MousePointer2, Calculator, Upload, Download, Layers, Trash2
 } from 'lucide-react'
 import { format, isAfter, isBefore, addDays, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale/es'
 import { toast } from 'sonner'
-import { upsertInventario, createLaboratorio, getAuditoria, importarInventarioMasivo } from '@/app/actions/inventario'
+import { upsertInventario, createLaboratorio, getAuditoria, importarInventarioMasivo, darBajaLote } from '@/app/actions/inventario'
 import {
   CsvInventarioRow,
   CsvParseError,
   generateInventarioCsvTemplate,
   parseInventarioCsv,
 } from '@/lib/inventario/csv-import'
+import type { NormalizedLoteStock } from '@/lib/inventario/fraccionamiento'
 import { Database } from '@/lib/supabase/database.types'
 import { calculatePV, formatCurrency } from '@/lib/utils'
 
 type InventarioRow = Database['public']['Views']['vista_inventario_completo']['Row'] & {
   requiere_formula?: boolean
+  lotes_activos?: NormalizedLoteStock[]
+  tiene_stock_vencido?: boolean
+  todo_vencido?: boolean
 }
 type LaboratorioRow = Database['public']['Tables']['laboratorios']['Row']
 
@@ -176,6 +180,11 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
   const [importErrors, setImportErrors] = useState<CsvParseError[]>([])
   const [importFileName, setImportFileName] = useState('')
   const [importingCsv, setImportingCsv] = useState(false)
+
+  const [lotesModalProduct, setLotesModalProduct] = useState<InventarioRow | null>(null)
+  const [confirmingBajaLoteId, setConfirmingBajaLoteId] = useState<string | null>(null)
+  const [bajaMotivo, setBajaMotivo] = useState('Vencimiento / Retiro sanitario')
+  const [bajaLoadingId, setBajaLoadingId] = useState<string | null>(null)
 
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 8
@@ -640,9 +649,30 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                               <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">{item.codigo}</span>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2 mt-1">
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
                             <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100">{item.laboratorio || 'S.L'}</span>
                             <span className="text-[9px] font-black text-white bg-slate-900 px-2 py-0.5 rounded-lg">Lote: {item.lote || 'N/A'}</span>
+                            {(item.lotes_activos?.length || 0) > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setLotesModalProduct(item)
+                                  setConfirmingBajaLoteId(null)
+                                }}
+                                className="text-[9px] font-black text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded-lg border border-emerald-200 transition-colors"
+                              >
+                                {item.lotes_activos!.length} Lotes (FEFO)
+                              </button>
+                            )}
+                            {item.todo_vencido ? (
+                              <span className="text-[9px] font-black text-rose-700 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-200 uppercase">
+                                Bloqueado POS
+                              </span>
+                            ) : item.tiene_stock_vencido ? (
+                              <span className="text-[9px] font-black text-amber-700 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
+                                Lote vencido retenido
+                              </span>
+                            ) : null}
                             <span className="text-[10px] font-bold text-slate-400 truncate max-w-[80px]">INVIMA: {item.registro_invima || 'N/A'}</span>
                           </div>
                         </div>
@@ -683,6 +713,17 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
 
                     <td className="px-8 py-4 text-right">
                       <div className="flex justify-end gap-2 opacity-100 md:opacity-75 md:group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => {
+                            setLotesModalProduct(item)
+                            setConfirmingBajaLoteId(null)
+                          }}
+                          aria-label="Ver lotes y vencimientos"
+                          title="Ver lotes y dar de baja"
+                          className="w-8 h-8 flex items-center justify-center bg-white hover:bg-emerald-600 hover:text-white rounded-xl border border-slate-200 transition-all shadow-sm"
+                        >
+                          <Layers className="w-4 h-4" />
+                        </button>
                         <button onClick={() => openHistory(item)} aria-label="Ver historial" title="Historial de auditoría" className="w-8 h-8 flex items-center justify-center bg-white hover:bg-amber-500 hover:text-white rounded-xl border border-slate-200 transition-all shadow-sm"><History className="w-4 h-4" /></button>
                         <button onClick={() => { selectProduct(item); setIsModalOpen(true); }} aria-label="Editar producto" title="Editar producto" className="w-8 h-8 flex items-center justify-center bg-white hover:bg-slate-900 hover:text-white rounded-xl border border-slate-200 transition-all shadow-sm"><Edit3 className="w-4 h-4" /></button>
                       </div>
@@ -1185,6 +1226,174 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                 {importingCsv
                   ? 'Importando productos...'
                   : `Importar ${importRows.length} Productos`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL LOTES Y VENCIMIENTOS (FEFO) */}
+      {lotesModalProduct && (
+        <div className="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-[calc(100vw-2rem)] max-w-2xl p-6 md:p-8 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">
+                  Control Multi-Lote FEFO (Primero en vencer, primero en salir)
+                </p>
+                <h2 className="text-xl font-black text-slate-900 mt-1">
+                  {lotesModalProduct.nombre_producto}
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Cada compra con lote o fecha distinta conserva su propio registro sin borrar las existencias anteriores.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLotesModalProduct(null)}
+                className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-500"
+              >
+                <Plus className="w-5 h-5 rotate-45" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {lotesModalProduct.lotes_activos && lotesModalProduct.lotes_activos.length > 0 ? (
+                lotesModalProduct.lotes_activos.map((loteItem, idx) => {
+                  const exp = getExpirationStatus(loteItem.fecha_vencimiento || '')
+                  const isConfirming = confirmingBajaLoteId === (loteItem.id || `idx-${idx}`)
+                  return (
+                    <div
+                      key={loteItem.id || idx}
+                      className={`rounded-2xl border p-4 space-y-3 ${
+                        loteItem.vencido
+                          ? 'bg-rose-50/70 border-rose-200'
+                          : 'bg-slate-50/80 border-slate-200'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-black bg-slate-900 text-white px-2.5 py-0.5 rounded-lg">
+                              Lote: {loteItem.lote}
+                            </span>
+                            {loteItem.vencido ? (
+                              <span className="text-[10px] font-black uppercase bg-rose-600 text-white px-2 py-0.5 rounded-md">
+                                VENCIDO • BLOQUEADO EN POS
+                              </span>
+                            ) : idx === 0 ? (
+                              <span className="text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md">
+                                #1 Sale primero (FEFO)
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-black uppercase bg-slate-200 text-slate-700 px-2 py-0.5 rounded-md">
+                                #{idx + 1} En reserva
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-slate-600 font-semibold">
+                            <span className={`w-2.5 h-2.5 rounded-full ${exp.color}`} />
+                            <span>
+                              Vencimiento:{' '}
+                              {loteItem.fecha_vencimiento
+                                ? format(parseISO(loteItem.fecha_vencimiento), 'dd MMM yyyy', { locale: es })
+                                : 'Sin fecha'}
+                            </span>
+                            {loteItem.costo_caja !== null && (
+                              <span className="text-slate-400">
+                                • Costo caja: {formatCurrency(loteItem.costo_caja)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <div className="inline-flex items-center gap-2 bg-white border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-black text-slate-800">
+                            <span>{loteItem.cajas}C</span>
+                            <span className="text-slate-300">|</span>
+                            <span>{loteItem.blisters}B</span>
+                            <span className="text-slate-300">|</span>
+                            <span>{loteItem.unidades}U</span>
+                          </div>
+                          {loteItem.id && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setConfirmingBajaLoteId(
+                                  isConfirming ? null : loteItem.id || `idx-${idx}`
+                                )
+                                setBajaMotivo(
+                                  loteItem.vencido
+                                    ? 'Retiro por medicamento vencido'
+                                    : 'Avería o deterioro de empaque'
+                                )
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-black inline-flex items-center gap-1"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Dar de baja
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {isConfirming && loteItem.id && (
+                        <div className="rounded-xl bg-white border border-rose-200 p-3 flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+                          <input
+                            type="text"
+                            value={bajaMotivo}
+                            onChange={(e) => setBajaMotivo(e.target.value)}
+                            placeholder="Motivo de baja..."
+                            className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium outline-none"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setConfirmingBajaLoteId(null)}
+                              className="px-3 py-2 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold"
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              type="button"
+                              disabled={bajaLoadingId === loteItem.id}
+                              onClick={async () => {
+                                setBajaLoadingId(loteItem.id!)
+                                const res = await darBajaLote(loteItem.id!, bajaMotivo)
+                                setBajaLoadingId(null)
+                                if (res.success) {
+                                  toast.success(`Lote ${loteItem.lote} dado de baja correctamente`)
+                                  setLotesModalProduct(null)
+                                  setConfirmingBajaLoteId(null)
+                                  router.refresh()
+                                } else {
+                                  toast.error(res.error || 'No se pudo dar de baja el lote')
+                                }
+                              }}
+                              className="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-black disabled:opacity-50"
+                            >
+                              {bajaLoadingId === loteItem.id ? 'Retirando...' : 'Confirmar Baja'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              ) : (
+                <div className="rounded-2xl bg-slate-50 border border-dashed border-slate-200 p-8 text-center text-xs font-bold text-slate-500">
+                  Este producto no tiene unidades activas en ningún lote.
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setLotesModalProduct(null)}
+                className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-black"
+              >
+                Cerrar
               </button>
             </div>
           </div>

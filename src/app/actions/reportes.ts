@@ -31,7 +31,7 @@ export async function getReporteFinancieroDiario() {
   const [{ data: facturas }, { data: gastos }, { data: compras }] = await Promise.all([
     supabase
       .from('facturas')
-      .select('total, metodo_pago, estado_pago')
+      .select('total, metodo_pago, estado_pago, pago_efectivo, pago_tarjeta, pago_transferencia')
       .neq('estado_pago', 'anulada')
       .gte('created_at', inicioDia)
       .lte('created_at', finDia),
@@ -274,7 +274,7 @@ export async function getVentasMesContable(mes?: string) {
   const { data, error } = await supabase
     .from('facturas')
     .select(
-      'numero, created_at, cliente_nombre, cliente_documento, tipo_venta, metodo_pago, estado_pago, subtotal_bruto, descuento_monto, iva_total, total, monto_abonado'
+      'numero, created_at, cliente_nombre, cliente_documento, tipo_venta, metodo_pago, estado_pago, subtotal_bruto, descuento_monto, iva_total, total, monto_abonado, pago_efectivo, pago_tarjeta, pago_transferencia'
     )
     .gte('created_at', inicio)
     .lte('created_at', fin)

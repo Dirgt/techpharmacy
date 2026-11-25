@@ -24,7 +24,9 @@ export type GastoInput = z.infer<typeof GastoSchema>
 export const CompraDetalleSchema = z.object({
   producto_id: z.string().uuid(),
   cantidad: z.number().int().min(1, 'La cantidad debe ser al menos 1'),
-  costo_unitario: z.number().min(0, 'El costo no puede ser negativo')
+  costo_unitario: z.number().min(0, 'El costo no puede ser negativo'),
+  lote: z.string().trim().optional().nullable(),
+  fecha_vencimiento: z.string().trim().optional().nullable(),
 })
 
 export const CompraSchema = z.object({
@@ -34,6 +36,8 @@ export const CompraSchema = z.object({
   estado_pago: z.enum(['pagado', 'pendiente', 'credito']),
   metodo_pago: z.enum(['efectivo', 'transferencia', 'tarjeta']).nullable().optional(),
   caja_sesion_id: z.string().uuid().nullable().optional(),
+  estado_recepcion: z.enum(['conforme', 'observacion']).default('conforme'),
+  observaciones_recepcion: z.string().optional().nullable(),
   detalles: z.array(CompraDetalleSchema).min(1, 'La compra debe tener al menos un producto')
 })
 

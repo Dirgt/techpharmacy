@@ -26,7 +26,9 @@ export async function getCompras() {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('compras')
-    .select('*, proveedores(nombre), caja_sesiones(abierto_por), compra_detalles(id, cantidad, costo_unitario, subtotal, productos(nombre, codigo))')
+    .select(
+      '*, proveedores(nombre, documento_nit), caja_sesiones(abierto_por), compra_detalles(id, cantidad, costo_unitario, subtotal, lote, fecha_vencimiento, productos(nombre, codigo))'
+    )
     .order('created_at', { ascending: false })
 
   if (error) return { success: false, error: error.message }
@@ -119,7 +121,9 @@ export async function registrarCompra(input: CompraInput) {
     const detalles_rpc = validated.detalles.map(d => ({
       producto_id: d.producto_id,
       cantidad: d.cantidad,
-      costo_unitario: d.costo_unitario
+      costo_unitario: d.costo_unitario,
+      lote: d.lote?.trim() || '',
+      fecha_vencimiento: d.fecha_vencimiento?.trim() || '',
     }))
 
     const { data, error } = await supabase.rpc('registrar_compra_tx', {
@@ -130,7 +134,9 @@ export async function registrarCompra(input: CompraInput) {
       p_metodo_pago: validated.metodo_pago || 'efectivo',
       p_caja_sesion_id: (validated.estado_pago === 'pagado' && validated.metodo_pago === 'efectivo') ? (validated.caja_sesion_id as string) : (null as unknown as string),
       p_detalles: detalles_rpc,
-      p_user_id: auth.user.id
+      p_user_id: auth.user.id,
+      p_estado_recepcion: validated.estado_recepcion || 'conforme',
+      p_observaciones_recepcion: validated.observaciones_recepcion?.trim() || undefined,
     })
 
     if (error) return { success: false, error: error.message }

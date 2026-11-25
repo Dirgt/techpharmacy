@@ -12,6 +12,8 @@ type DrogueriaInfo = {
   telefono: string | null
   regimen: string | null
   mensaje_pie_factura?: string | null
+  prefijo_factura?: string | null
+  resolucion_dian?: string | null
 } | null
 
 type PrintFormat = '80mm' | '58mm' | 'carta'
@@ -34,6 +36,22 @@ export default function PrintClient({
 
   const isCredito = factura.tipo_venta === 'credito'
   const isThermal = format === '80mm' || format === '58mm'
+  const numeroFormateado = drogueria?.prefijo_factura
+    ? `${drogueria.prefijo_factura}-${factura.numero}`
+    : `${factura.numero}`
+  const isMixto = factura.metodo_pago === 'mixto'
+  const pagoEf = Number(factura.pago_efectivo || 0)
+  const pagoTj = Number(factura.pago_tarjeta || 0)
+  const pagoTr = Number(factura.pago_transferencia || 0)
+  const mixtoTexto = isMixto
+    ? [
+        pagoEf > 0 ? `Efec: $${pagoEf.toLocaleString()}` : '',
+        pagoTr > 0 ? `Transf: $${pagoTr.toLocaleString()}` : '',
+        pagoTj > 0 ? `Tarj: $${pagoTj.toLocaleString()}` : '',
+      ]
+        .filter(Boolean)
+        .join(' | ')
+    : ''
 
   const lineasCalculadas = detalles.map((d) => {
     const isDiscounted = factura.descuento_porcentaje > 0
@@ -85,10 +103,10 @@ export default function PrintClient({
     const lines = [
       `*${drogueriaNombre}*`,
       drogueria?.nit ? `NIT: ${drogueria.nit}` : '',
-      `Comprobante *#${factura.numero}*`,
+      `Comprobante *${drogueria?.prefijo_factura ? numeroFormateado : `#${numeroFormateado}`}*`,
       `Fecha: ${new Date(factura.created_at).toLocaleString()}`,
       `Cliente: ${factura.cliente_nombre || 'Consumidor Final'}`,
-      `Condición: ${String(factura.tipo_venta || 'contado').toUpperCase()} (${factura.metodo_pago || 'efectivo'})`,
+      `Condición: ${String(factura.tipo_venta || 'contado').toUpperCase()} (${isMixto ? `MIXTO: ${mixtoTexto}` : factura.metodo_pago || 'efectivo'})`,
       '',
       '*Detalle:*',
       itemsTexto,
@@ -148,7 +166,9 @@ export default function PrintClient({
       {/* Non-printable action bar */}
       <div className="w-full max-w-4xl bg-slate-900 px-5 py-4 flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4 print:hidden rounded-2xl shadow-xl">
         <div>
-          <h2 className="text-white font-black text-lg">Factura #{factura.numero}</h2>
+          <h2 className="text-white font-black text-lg">
+            Factura {drogueria?.prefijo_factura ? numeroFormateado : `#${numeroFormateado}`}
+          </h2>
           <p className="text-slate-400 text-xs font-bold">
             Elige formato tirilla POS o carta, o envía el recibo por WhatsApp
           </p>
@@ -245,8 +265,13 @@ export default function PrintClient({
             <div className="border-b border-dashed border-slate-400 pb-2 mb-2 space-y-0.5 text-[10px]">
               <div className="flex justify-between font-black">
                 <span>FACTURA POS</span>
-                <span>N° {factura.numero}</span>
+                <span>N° {numeroFormateado}</span>
               </div>
+              {drogueria?.resolucion_dian && (
+                <p className="text-[8px] leading-tight text-slate-600">
+                  {drogueria.resolucion_dian}
+                </p>
+              )}
               <p>Fecha: {new Date(factura.created_at).toLocaleString()}</p>
               <p>Vendedor: {factura.vendedor?.full_name || 'Mostrador'}</p>
               <p className="truncate">Cliente: {factura.cliente_nombre}</p>
@@ -254,6 +279,9 @@ export default function PrintClient({
               <p className="uppercase">
                 Pago: {factura.tipo_venta} / {factura.metodo_pago}
               </p>
+              {isMixto && mixtoTexto && (
+                <p className="text-[9px] font-bold">Desglose: {mixtoTexto}</p>
+              )}
               {isCredito && factura.fecha_vencimiento && (
                 <p>Vence: {new Date(factura.fecha_vencimiento).toLocaleDateString()}</p>
               )}
@@ -355,8 +383,13 @@ export default function PrintClient({
                   FACTURA
                 </h2>
                 <div className="inline-block bg-slate-900 text-white px-4 py-1.5 print:py-0.5 rounded-lg mt-2 mb-4 print:mt-1 print:mb-2">
-                  <span className="font-black text-lg print:text-sm">N° {factura.numero}</span>
+                  <span className="font-black text-lg print:text-sm">N° {numeroFormateado}</span>
                 </div>
+                {drogueria?.resolucion_dian && (
+                  <p className="text-[10px] print:text-[8px] font-semibold text-slate-500 max-w-xs ml-auto mb-1">
+                    {drogueria.resolucion_dian}
+                  </p>
+                )}
                 <p className="text-sm print:text-[10px] font-black text-slate-900">
                   Fecha:{' '}
                   <span className="font-bold text-slate-600">
@@ -403,6 +436,11 @@ export default function PrintClient({
                     <p className="text-sm print:text-[10px] font-black text-slate-900 uppercase">
                       {factura.metodo_pago}
                     </p>
+                    {isMixto && mixtoTexto && (
+                      <p className="text-[10px] print:text-[8px] font-bold text-slate-600">
+                        {mixtoTexto}
+                      </p>
+                    )}
                   </div>
                   {isCredito && (
                     <>

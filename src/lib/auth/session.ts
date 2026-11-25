@@ -16,6 +16,8 @@ export type UserDrogueria = {
   fecha_vencimiento: string | null
   motivo_suspension: string | null
   mensaje_pie_factura: string | null
+  prefijo_factura: string | null
+  resolucion_dian: string | null
 }
 
 export type UserProfile = {
@@ -55,7 +57,9 @@ export const getCurrentUserWithProfile = cache(async () => {
         max_usuarios,
         fecha_vencimiento,
         motivo_suspension,
-        mensaje_pie_factura
+        mensaje_pie_factura,
+        prefijo_factura,
+        resolucion_dian
       )
     `)
     .eq('id', user.id)

@@ -12,6 +12,16 @@ import { abrirCaja, cerrarCaja } from '@/app/actions/caja'
 import { GastoModal } from '@/components/tesoreria/gasto-modal'
 import { useBarcodeScanner } from '@/hooks/use-barcode-scanner'
 import { calculatePV, formatCurrency } from '@/lib/utils'
+import { canFulfillWithUnpacking, suggestPackConsolidation } from '@/lib/inventario/fraccionamiento'
+import { calcularEfectivoEsperadoCaja, validateAndNormalizePago, type MetodoPagoPos } from '@/lib/pos/pago-mixto'
+
+type PresentationMode = 'caja' | 'blister' | 'unidad'
+
+const isFracProduct = (p: any) =>
+  Math.max(1, Number(p?.blisters_por_caja) || 1) > 1 ||
+  Math.max(1, Number(p?.unidades_por_blister) || 1) > 1 ||
+  (Number(p?.blisters) || 0) > 0 ||
+  (Number(p?.unidades) || 0) > 0
 
 const calculateLinePrice = (productDef: any, cajas: number, blisters: number, unidades: number) => {
   const pvpCaja = calculatePV(productDef.precio_caja, productDef.margen_caja ?? productDef.porcentaje_ganancia ?? 0)
@@ -20,21 +30,37 @@ const calculateLinePrice = (productDef: any, cajas: number, blisters: number, un
   return (pvpCaja * cajas) + (pvpBlister * blisters) + (pvpUnidad * unidades)
 }
 
+const isProductBlockedExpired = (product: any) => Boolean(product?.todo_vencido)
+
+const hasSellableStock = (product: any) =>
+  (Number(product?.cajas) || 0) > 0 ||
+  (Number(product?.blisters) || 0) > 0 ||
+  (Number(product?.unidades) || 0) > 0
+
 export function FacturacionClient({
   inventarioInitial,
   vendedores,
   cajaAbierta,
   carteraInitial = [],
   userRole = 'vendedor',
+  prefijoFactura = null,
 }: {
   inventarioInitial: any[],
   vendedores: any[],
   cajaAbierta: any,
   carteraInitial?: any[],
   userRole?: string,
+  prefijoFactura?: string | null,
 }) {
   const router = useRouter()
   const isAdmin = userRole === 'admin' || userRole === 'superadmin'
+  const formatFacturaNum = useCallback(
+    (num: number | string | null | undefined) => {
+      if (num === null || num === undefined || num === '') return 'PENDIENTE'
+      return prefijoFactura ? `${prefijoFactura}-${num}` : `#${num}`
+    },
+    [prefijoFactura]
+  )
   const [cancelingFactura, setCancelingFactura] = useState<any | null>(null)
   const [cancelReason, setCancelReason] = useState('')
   const [isCancelingFactura, setIsCancelingFactura] = useState(false)
@@ -51,6 +77,7 @@ export function FacturacionClient({
     return inventarioInitial.filter((p) => {
       if (p.producto_id === equivalentesSource.producto_id) return false
       if ((p.principio_activo || '').trim().toLowerCase() !== rawMolecula) return false
+      if (isProductBlockedExpired(p)) return false
       return (Number(p.cajas) || 0) > 0 || (Number(p.blisters) || 0) > 0 || (Number(p.unidades) || 0) > 0
     })
   }, [equivalentesSource, inventarioInitial])
@@ -77,7 +104,10 @@ export function FacturacionClient({
   const [nuevoCliente, setNuevoCliente] = useState({ nombre: '', documento: '', tipo_doc: 'CC', tipo_cliente: 'persona', telefono: '', email: '' })
   const [savingCliente, setSavingCliente] = useState(false)
   // --- Pago y proceso ---
-  const [metodoPago, setMetodoPago] = useState<'efectivo' | 'tarjeta' | 'transferencia'>('efectivo')
+  const [metodoPago, setMetodoPago] = useState<MetodoPagoPos>('efectivo')
+  const [pagoEfectivoStr, setPagoEfectivoStr] = useState<string>('')
+  const [pagoTarjetaStr, setPagoTarjetaStr] = useState<string>('')
+  const [pagoTransferenciaStr, setPagoTransferenciaStr] = useState<string>('')
   const [tipoVenta, setTipoVenta] = useState<'contado' | 'credito'>('contado')
   const [condicionPagoDias, setCondicionPagoDias] = useState<number>(0)
   const [ordenCompra, setOrdenCompra] = useState('')
@@ -94,6 +124,7 @@ export function FacturacionClient({
   const [cartera, setCartera] = useState<any[]>(carteraInitial)
   const [gastosSesion, setGastosSesion] = useState<any[]>([])
   const [comprasEfectivoSesion, setComprasEfectivoSesion] = useState<any[]>([])
+  const [abonosEfectivoSesion, setAbonosEfectivoSesion] = useState<any[]>([])
   const [loadingVentas, setLoadingVentas] = useState(false)
   const [subTabVentas, setSubTabVentas] = useState<'historial' | 'cartera'>('historial')
   const [expandedFacturaId, setExpandedFacturaId] = useState<string | null>(null)
@@ -118,14 +149,38 @@ export function FacturacionClient({
       if (!error && data) {
         setNextFacturaNum(data.numero + 1)
       } else {
-        // Fallback si no hay facturas
         setNextFacturaNum(1)
       }
     }
     fetchNextFacturaNum()
   }, [])
 
-  const addToCart = useCallback((product: any) => {
+  const addToCart = useCallback((product: any, preferredMode?: PresentationMode) => {
+    if (isProductBlockedExpired(product)) {
+      toast.error(`Bloqueado: ${product.nombre_producto} tiene lote vencido sin stock vigente.`)
+      return
+    }
+    if (!hasSellableStock(product)) {
+      toast.error(`Sin stock vigente disponible para ${product.nombre_producto}.`)
+      return
+    }
+
+    const bpc = Math.max(1, Number(product.blisters_por_caja) || 1)
+    const upb = Math.max(1, Number(product.unidades_por_blister) || 1)
+    const avail = {
+      cajas: Number(product.cajas) || 0,
+      blisters: Number(product.blisters) || 0,
+      unidades: Number(product.unidades) || 0,
+    }
+
+    const modeToField: Record<PresentationMode, 'cantidad_cajas' | 'cantidad_blisters' | 'cantidad_unidades'> = {
+      caja: 'cantidad_cajas',
+      blister: 'cantidad_blisters',
+      unidad: 'cantidad_unidades',
+    }
+
+    let added = false
+    let stockShortage = false
     setCart(prev => {
       const existing = prev.find(item => item.producto_id === product.producto_id)
 
@@ -133,13 +188,49 @@ export function FacturacionClient({
         return prev.map(item => {
           if (item.producto_id === product.producto_id) {
             let fieldToIncrement: 'cantidad_unidades' | 'cantidad_blisters' | 'cantidad_cajas' | null = null
-            if (item.cantidad_unidades < (product.unidades || 0)) fieldToIncrement = 'cantidad_unidades'
-            else if (item.cantidad_blisters < (product.blisters || 0)) fieldToIncrement = 'cantidad_blisters'
-            else if (item.cantidad_cajas < (product.cajas || 0)) fieldToIncrement = 'cantidad_cajas'
+
+            if (preferredMode) {
+              const f = modeToField[preferredMode]
+              const req = {
+                cajas: f === 'cantidad_cajas' ? item.cantidad_cajas + 1 : item.cantidad_cajas,
+                blisters: f === 'cantidad_blisters' ? item.cantidad_blisters + 1 : item.cantidad_blisters,
+                unidades: f === 'cantidad_unidades' ? item.cantidad_unidades + 1 : item.cantidad_unidades,
+              }
+              if (canFulfillWithUnpacking(avail, req, bpc, upb)) {
+                fieldToIncrement = f
+              } else {
+                stockShortage = true
+              }
+            } else {
+              const tryOrder: Array<'cantidad_unidades' | 'cantidad_blisters' | 'cantidad_cajas'> = !isFracProduct(product)
+                ? ['cantidad_cajas']
+                : ['cantidad_unidades', 'cantidad_blisters', 'cantidad_cajas']
+              for (const f of tryOrder) {
+                const req = {
+                  cajas: f === 'cantidad_cajas' ? item.cantidad_cajas + 1 : item.cantidad_cajas,
+                  blisters: f === 'cantidad_blisters' ? item.cantidad_blisters + 1 : item.cantidad_blisters,
+                  unidades: f === 'cantidad_unidades' ? item.cantidad_unidades + 1 : item.cantidad_unidades,
+                }
+                if (f === 'cantidad_unidades' && (avail.unidades > 0 || upb > 1 || bpc > 1) && canFulfillWithUnpacking(avail, req, bpc, upb)) {
+                  fieldToIncrement = f
+                  break
+                }
+                if (f === 'cantidad_blisters' && (avail.blisters > 0 || bpc > 1) && canFulfillWithUnpacking(avail, req, bpc, upb)) {
+                  fieldToIncrement = f
+                  break
+                }
+                if (f === 'cantidad_cajas' && canFulfillWithUnpacking(avail, req, bpc, upb)) {
+                  fieldToIncrement = f
+                  break
+                }
+              }
+            }
 
             if (fieldToIncrement) {
+              added = true
               const newVal = item[fieldToIncrement] + 1
-              const newPrice = calculateLinePrice(product,
+              const newPrice = calculateLinePrice(
+                product,
                 fieldToIncrement === 'cantidad_cajas' ? newVal : item.cantidad_cajas,
                 fieldToIncrement === 'cantidad_blisters' ? newVal : item.cantidad_blisters,
                 fieldToIncrement === 'cantidad_unidades' ? newVal : item.cantidad_unidades
@@ -153,11 +244,40 @@ export function FacturacionClient({
       }
 
       let defUnidades = 0, defBlisters = 0, defCajas = 0
-      if ((product.unidades || 0) > 0) defUnidades = 1
-      else if ((product.blisters || 0) > 0) defBlisters = 1
-      else if ((product.cajas || 0) > 0) defCajas = 1
-      else defCajas = 1 // Fallback
+      if (preferredMode === 'caja') {
+        if (canFulfillWithUnpacking(avail, { cajas: 1, blisters: 0, unidades: 0 }, bpc, upb)) {
+          defCajas = 1
+        } else {
+          stockShortage = true
+          return prev
+        }
+      } else if (preferredMode === 'blister') {
+        if ((avail.blisters > 0 || bpc > 1) && canFulfillWithUnpacking(avail, { cajas: 0, blisters: 1, unidades: 0 }, bpc, upb)) {
+          defBlisters = 1
+        } else {
+          stockShortage = true
+          return prev
+        }
+      } else if (preferredMode === 'unidad') {
+        if ((avail.unidades > 0 || upb > 1 || bpc > 1) && canFulfillWithUnpacking(avail, { cajas: 0, blisters: 0, unidades: 1 }, bpc, upb)) {
+          defUnidades = 1
+        } else {
+          stockShortage = true
+          return prev
+        }
+      } else if (!isFracProduct(product)) {
+        defCajas = 1
+      } else if (avail.unidades > 0) {
+        defUnidades = 1
+      } else if (avail.blisters > 0) {
+        defBlisters = 1
+      } else if ((upb > 1 || bpc > 1) && canFulfillWithUnpacking(avail, { cajas: 0, blisters: 0, unidades: 1 }, bpc, upb)) {
+        defUnidades = 1
+      } else {
+        defCajas = 1
+      }
 
+      added = true
       const basePrice = calculateLinePrice(product, defCajas, defBlisters, defUnidades)
 
       const newItem: FacturaItem = {
@@ -174,7 +294,19 @@ export function FacturacionClient({
       return [...prev, newItem]
     })
     setSearchTerm('')
-    toast.success(`${product.nombre_producto} agregado al carrito`)
+    if (stockShortage) {
+      toast.error(`Stock vigente insuficiente para agregar esa presentación de ${product.nombre_producto}.`)
+    } else if (added) {
+      const modeLabel =
+        preferredMode === 'caja'
+          ? ' (1 Caja)'
+          : preferredMode === 'blister'
+            ? ' (1 Sobre/Blíster)'
+            : preferredMode === 'unidad'
+              ? ' (1 Unidad)'
+              : ''
+      toast.success(`${product.nombre_producto}${modeLabel} agregado`)
+    }
   }, [descuentoPct])
 
   useBarcodeScanner((barcode) => {
@@ -193,7 +325,15 @@ export function FacturacionClient({
 
   const ventasFiltradas = useMemo(() => {
     if (filterMethod === 'todos') return ventasHoy
-    return ventasHoy.filter(v => v.metodo_pago === filterMethod)
+    return ventasHoy.filter((v) => {
+      if (v.metodo_pago === filterMethod) return true
+      if (v.metodo_pago === 'mixto') {
+        if (filterMethod === 'efectivo') return Number(v.pago_efectivo || 0) > 0
+        if (filterMethod === 'tarjeta') return Number(v.pago_tarjeta || 0) > 0
+        if (filterMethod === 'transferencia') return Number(v.pago_transferencia || 0) > 0
+      }
+      return false
+    })
   }, [ventasHoy, filterMethod])
 
   const carteraPendiente = useMemo(
@@ -231,6 +371,23 @@ export function FacturacionClient({
 
   const cartTotal = useMemo(() => cartBaseIva + cartIvaMonto, [cartBaseIva, cartIvaMonto])
 
+  const pagoEfectivoNum = Number(pagoEfectivoStr.replace(/\D/g, '')) || 0
+  const pagoTarjetaNum = Number(pagoTarjetaStr.replace(/\D/g, '')) || 0
+  const pagoTransferenciaNum = Number(pagoTransferenciaStr.replace(/\D/g, '')) || 0
+
+  const pagoMixtoValidation = useMemo(
+    () =>
+      validateAndNormalizePago({
+        total: cartTotal,
+        tipoVenta,
+        metodoPago,
+        pagoEfectivo: pagoEfectivoNum,
+        pagoTarjeta: pagoTarjetaNum,
+        pagoTransferencia: pagoTransferenciaNum,
+      }),
+    [cartTotal, tipoVenta, metodoPago, pagoEfectivoNum, pagoTarjetaNum, pagoTransferenciaNum]
+  )
+
   const vueltas = useMemo(() => {
     const recibido = Number(efectivoRecibido.replace(/\D/g, '')) || 0;
     return Math.max(0, recibido - cartTotal);
@@ -244,9 +401,17 @@ export function FacturacionClient({
       total += t
       count += 1
       if (f.estado_pago === 'pagado') {
-        if (f.metodo_pago === 'efectivo') efectivo += t
-        else if (f.metodo_pago === 'tarjeta') tarjeta += t
-        else transferencia += t
+        if (f.metodo_pago === 'mixto') {
+          efectivo += Number(f.pago_efectivo) || 0
+          tarjeta += Number(f.pago_tarjeta) || 0
+          transferencia += Number(f.pago_transferencia) || 0
+        } else if (f.metodo_pago === 'efectivo') {
+          efectivo += Number(f.pago_efectivo) > 0 ? Number(f.pago_efectivo) : t
+        } else if (f.metodo_pago === 'tarjeta') {
+          tarjeta += Number(f.pago_tarjeta) > 0 ? Number(f.pago_tarjeta) : t
+        } else {
+          transferencia += Number(f.pago_transferencia) > 0 ? Number(f.pago_transferencia) : t
+        }
       }
     })
     return { total, efectivo, tarjeta, transferencia, count, promedio: count > 0 ? total / count : 0 }
@@ -260,12 +425,26 @@ export function FacturacionClient({
     () => comprasEfectivoSesion.reduce((sum, c) => sum + (Number(c.total) || 0), 0),
     [comprasEfectivoSesion]
   )
-  const totalEgresosEfectivoSesion = totalGastosSesion + totalComprasEfectivoSesion
-  const totalEsperadoCaja = (Number(cajaAbierta?.monto_apertura) || 0) + kpisVentas.efectivo - totalEgresosEfectivoSesion
+  const totalAbonosEfectivoSesion = useMemo(
+    () => abonosEfectivoSesion.reduce((sum, a) => sum + (Number(a.monto) || 0), 0),
+    [abonosEfectivoSesion]
+  )
+  const totalEsperadoCaja = useMemo(
+    () =>
+      calcularEfectivoEsperadoCaja({
+        montoApertura: Number(cajaAbierta?.monto_apertura) || 0,
+        facturasSesion: ventasHoy,
+        abonosEfectivoTotal: totalAbonosEfectivoSesion,
+        gastosEfectivoTotal: totalGastosSesion,
+        comprasEfectivoTotal: totalComprasEfectivoSesion,
+      }),
+    [cajaAbierta?.monto_apertura, ventasHoy, totalAbonosEfectivoSesion, totalGastosSesion, totalComprasEfectivoSesion]
+  )
 
   const topProductos = useMemo(() => {
     const map = new Map<string, { nombre: string, total: number, count: number }>()
     ventasHoy.forEach(f => {
+      if (f.estado_pago === 'anulada') return
       f.detalles?.forEach((d: any) => {
         const prodId = d.producto_id
         const current = map.get(prodId) || { nombre: d.producto?.nombre || 'Producto', total: 0, count: 0 }
@@ -283,7 +462,6 @@ export function FacturacionClient({
     if (!cajaId) return
     setLoadingVentas(true)
     try {
-      // Llamada directa a la API Route con cache desactivado + cartera global
       const [res, carteraData] = await Promise.all([
         fetch(`/api/ventas-sesion?cajaId=${cajaId}`, { cache: 'no-store' }),
         getCartera(),
@@ -293,6 +471,7 @@ export function FacturacionClient({
         setVentasHoy(json.data || [])
         setGastosSesion(json.gastos || [])
         setComprasEfectivoSesion(json.comprasEfectivo || [])
+        setAbonosEfectivoSesion(json.abonosEfectivo || [])
       } else {
         toast.error('Error cargando ventas')
       }
@@ -321,9 +500,9 @@ export function FacturacionClient({
       setDescuentoPct(10)
       setTipoVenta('credito')
       setCondicionPagoDias(30)
+      setMetodoPago((prev) => (prev === 'mixto' ? 'efectivo' : prev))
       toast.info('Cliente Distribuidor: Descuento 10% y Crédito 30d auto-aplicados')
     } else {
-      // Opcional: resetear al cambiar a cliente normal
       setDescuentoPct(0)
       setTipoVenta('contado')
       setCondicionPagoDias(0)
@@ -344,9 +523,9 @@ export function FacturacionClient({
 
   const exportarCSV = () => {
     if (ventasHoy.length === 0) return
-    const header = 'Factura,Fecha,Vendedor,Cliente,Documento,Metodo,Total'
+    const header = 'Factura,Fecha,Vendedor,Cliente,Documento,Metodo,Efectivo,Tarjeta,Transferencia,Total'
     const rows = ventasHoy.map(f =>
-      `${f.numero},"${new Date(f.created_at).toLocaleString()}","${f.vendedor?.full_name || 'N/A'}","${f.cliente_nombre}","${f.cliente_documento}","${f.metodo_pago}",${f.total}`
+      `${formatFacturaNum(f.numero)},"${new Date(f.created_at).toLocaleString()}","${f.vendedor?.full_name || 'N/A'}","${f.cliente_nombre}","${f.cliente_documento}","${f.metodo_pago}",${f.pago_efectivo || 0},${f.pago_tarjeta || 0},${f.pago_transferencia || 0},${f.total}`
     ).join('\n')
     const uri = "data:text/csv;charset=utf-8," + encodeURI(header + '\n' + rows)
     const link = document.createElement('a')
@@ -361,12 +540,30 @@ export function FacturacionClient({
   const updateQuantity = (producto_id: string, field: 'cantidad_cajas' | 'cantidad_blisters' | 'cantidad_unidades', value: number) => {
     if (value < 0) return
 
+    let rejected = false
     setCart(prev => prev.map(item => {
       if (item.producto_id === producto_id) {
         const productDef = inventarioInitial.find(p => p.producto_id === producto_id)
         if (!productDef) return item
 
         const updatedItem = { ...item, [field]: value }
+        const bpc = Math.max(1, Number(productDef.blisters_por_caja) || 1)
+        const upb = Math.max(1, Number(productDef.unidades_por_blister) || 1)
+        const avail = {
+          cajas: Number(productDef.cajas) || 0,
+          blisters: Number(productDef.blisters) || 0,
+          unidades: Number(productDef.unidades) || 0,
+        }
+        const req = {
+          cajas: updatedItem.cantidad_cajas,
+          blisters: updatedItem.cantidad_blisters,
+          unidades: updatedItem.cantidad_unidades,
+        }
+
+        if (!canFulfillWithUnpacking(avail, req, bpc, upb)) {
+          rejected = true
+          return item
+        }
 
         const basePrice = calculateLinePrice(productDef, updatedItem.cantidad_cajas, updatedItem.cantidad_blisters, updatedItem.cantidad_unidades)
         updatedItem.precio_unitario_base = basePrice
@@ -377,6 +574,52 @@ export function FacturacionClient({
       }
       return item
     }))
+    if (rejected) {
+      toast.error('La cantidad supera el stock vigente disponible')
+    }
+  }
+
+  const replaceCartCounts = (
+    producto_id: string,
+    nextCounts: { cajas: number; blisters: number; unidades: number },
+    feedback?: string
+  ) => {
+    let rejected = false
+    setCart(prev => prev.map(item => {
+      if (item.producto_id !== producto_id) return item
+      const productDef = inventarioInitial.find(p => p.producto_id === producto_id)
+      if (!productDef) return item
+
+      const bpc = Math.max(1, Number(productDef.blisters_por_caja) || 1)
+      const upb = Math.max(1, Number(productDef.unidades_por_blister) || 1)
+      const avail = {
+        cajas: Number(productDef.cajas) || 0,
+        blisters: Number(productDef.blisters) || 0,
+        unidades: Number(productDef.unidades) || 0,
+      }
+
+      if (!canFulfillWithUnpacking(avail, nextCounts, bpc, upb)) {
+        rejected = true
+        return item
+      }
+
+      const basePrice = calculateLinePrice(productDef, nextCounts.cajas, nextCounts.blisters, nextCounts.unidades)
+      return {
+        ...item,
+        cantidad_cajas: nextCounts.cajas,
+        cantidad_blisters: nextCounts.blisters,
+        cantidad_unidades: nextCounts.unidades,
+        precio_unitario_base: basePrice,
+        descuento_porcentaje: descuentoPct,
+        precio_linea: basePrice * (1 - (descuentoPct / 100)),
+      }
+    }))
+
+    if (rejected) {
+      toast.error('Stock vigente insuficiente para esa presentación')
+    } else if (feedback) {
+      toast.success(feedback)
+    }
   }
 
   const removeFromCart = (producto_id: string) => {
@@ -398,22 +641,49 @@ export function FacturacionClient({
     }
 
     for (const item of cart) {
+      const totalCant = item.cantidad_cajas + item.cantidad_blisters + item.cantidad_unidades
+      if (totalCant <= 0) {
+        toast.error(`Revisa ${item.nombre}: las cantidades no pueden quedar en 0.`)
+        return
+      }
       const productDef = inventarioInitial.find(p => p.producto_id === item.producto_id)
       if (productDef) {
-        if (item.cantidad_cajas > productDef.cajas ||
-          item.cantidad_blisters > productDef.blisters ||
-          item.cantidad_unidades > productDef.unidades) {
-          toast.error(`Stock insuficiente para ${item.nombre}. Revisa las cantidades.`)
+        if (isProductBlockedExpired(productDef)) {
+          toast.error(`${item.nombre} tiene lote vencido bloqueado y no se puede vender.`)
+          return
+        }
+        const bpc = Math.max(1, Number(productDef.blisters_por_caja) || 1)
+        const upb = Math.max(1, Number(productDef.unidades_por_blister) || 1)
+        const avail = {
+          cajas: Number(productDef.cajas) || 0,
+          blisters: Number(productDef.blisters) || 0,
+          unidades: Number(productDef.unidades) || 0,
+        }
+        const req = {
+          cajas: item.cantidad_cajas,
+          blisters: item.cantidad_blisters,
+          unidades: item.cantidad_unidades,
+        }
+        if (!canFulfillWithUnpacking(avail, req, bpc, upb)) {
+          toast.error(`Stock vigente insuficiente para ${item.nombre}. Revisa las cantidades.`)
           return
         }
       }
     }
 
+    if (!pagoMixtoValidation.ok) {
+      toast.error(pagoMixtoValidation.error)
+      return
+    }
+
     setIsProcessing(true)
     const payload: FacturaData = {
       cliente_nombre: clienteSelected?.nombre || 'Consumidor Final',
-      cliente_documento: clienteSelected?.documento || '000000000',
-      metodo_pago: metodoPago,
+      cliente_documento: clienteSelected?.documento || '222222222222',
+      metodo_pago: pagoMixtoValidation.metodoPago,
+      pago_efectivo: pagoMixtoValidation.pagoEfectivo,
+      pago_tarjeta: pagoMixtoValidation.pagoTarjeta,
+      pago_transferencia: pagoMixtoValidation.pagoTransferencia,
       tipo_venta: tipoVenta,
       condicion_pago_dias: tipoVenta === 'credito' ? condicionPagoDias : 0,
       orden_compra: ordenCompra || undefined,
@@ -430,7 +700,11 @@ export function FacturacionClient({
 
     const res = await crearFactura(payload)
     if (res.success) {
-      toast.success(`Factura #${res.factura?.numero} — ${tipoVenta === 'credito' ? `Crédito ${condicionPagoDias}d` : 'Contado'}`)
+      const numeroShown = res.factura?.numero ? formatFacturaNum(res.factura.numero) : ''
+      toast.success(`Factura ${numeroShown} — ${tipoVenta === 'credito' ? `Crédito ${condicionPagoDias}d` : 'Contado'}`)
+      if (res.factura?.numero) {
+        setNextFacturaNum(res.factura.numero + 1)
+      }
       setCart([])
       setClienteSelected(null)
       setClienteSearch('')
@@ -439,6 +713,11 @@ export function FacturacionClient({
       setIvaPct(0)
       setTipoVenta('contado')
       setCondicionPagoDias(0)
+      setMetodoPago('efectivo')
+      setPagoEfectivoStr('')
+      setPagoTarjetaStr('')
+      setPagoTransferenciaStr('')
+      setEfectivoRecibido('')
       router.refresh()
       fetchVentas()
 
@@ -585,39 +864,107 @@ export function FacturacionClient({
                 />
               </div>
               {searchResults.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-100 rounded-2xl shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden z-30 max-h-80 overflow-y-auto">
-                  {searchResults.map(item => (
-                    <div key={item.producto_id}
-                      className="w-full px-5 py-3 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 flex items-center justify-between gap-3 group">
-                      <button type="button" onClick={() => addToCart(item)} className="flex-1 text-left min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <h4 className="font-black text-slate-900 text-sm group-hover:text-indigo-600 transition-colors truncate">{item.nombre_producto}</h4>
-                          {item.requiere_formula && (
-                            <span className="text-[9px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded uppercase">Rx Fórmula</span>
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-100 rounded-2xl shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden z-30 max-h-96 overflow-y-auto">
+                  {searchResults.map(item => {
+                    const blockedExpired = isProductBlockedExpired(item)
+                    const sellable = hasSellableStock(item)
+                    const disabledAdd = blockedExpired || !sellable
+                    const frac = isFracProduct(item)
+                    const bpc = Math.max(1, Number(item.blisters_por_caja) || 1)
+                    const upb = Math.max(1, Number(item.unidades_por_blister) || 1)
+                    const avail = {
+                      cajas: Number(item.cajas) || 0,
+                      blisters: Number(item.blisters) || 0,
+                      unidades: Number(item.unidades) || 0,
+                    }
+                    const pvpCaja = calculatePV(item.precio_caja || 0, item.margen_caja ?? item.porcentaje_ganancia ?? 0)
+                    const pvpBlister = calculatePV(item.precio_blister || 0, item.margen_blister ?? 0)
+                    const pvpUnidad = calculatePV(item.precio_unidad || 0, item.margen_unidad ?? 0)
+                    const canCaja = !disabledAdd && avail.cajas >= 1
+                    const canBlister = !disabledAdd && (avail.blisters > 0 || bpc > 1) && canFulfillWithUnpacking(avail, { cajas: 0, blisters: 1, unidades: 0 }, bpc, upb)
+                    const canUnidad = !disabledAdd && (avail.unidades > 0 || upb > 1 || bpc > 1) && canFulfillWithUnpacking(avail, { cajas: 0, blisters: 0, unidades: 1 }, bpc, upb)
+
+                    return (
+                      <div key={item.producto_id}
+                        className={`w-full px-4 py-3 transition-colors border-b border-slate-100 last:border-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${disabledAdd ? 'bg-rose-50/40' : 'hover:bg-slate-50/80'}`}>
+                        <div className="flex-1 text-left min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h4 className={`font-black text-sm truncate ${disabledAdd ? 'text-slate-500' : 'text-slate-900'}`}>{item.nombre_producto}</h4>
+                            {item.requiere_formula && (
+                              <span className="text-[9px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded uppercase">Rx Fórmula</span>
+                            )}
+                            {blockedExpired && (
+                              <span className="text-[9px] font-black text-white bg-rose-600 px-1.5 py-0.5 rounded uppercase">Vencido • Bloqueado</span>
+                            )}
+                            {!blockedExpired && item.tiene_stock_vencido && (
+                              <span className="text-[9px] font-black text-amber-800 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded">Lote vencido retenido</span>
+                            )}
+                            {!blockedExpired && !sellable && (
+                              <span className="text-[9px] font-black text-slate-600 bg-slate-200 px-1.5 py-0.5 rounded uppercase">Sin stock</span>
+                            )}
+                          </div>
+                          {item.principio_activo && <p className="text-[10px] text-indigo-500 font-bold mb-0.5 mt-0.5 bg-indigo-50 inline-block px-1.5 py-0.5 rounded">Molécula: {item.principio_activo}</p>}
+                          <p className="text-xs font-bold text-slate-400">
+                            {item.laboratorio || item.laboratorio_nombre} • {item.codigo || item.codigo_producto} • Stock: {item.cajas}C / {item.blisters}B / {item.unidades}U
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                          {item.principio_activo && (
+                            <button
+                              type="button"
+                              onClick={() => setEquivalentesSource(item)}
+                              className="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-black inline-flex items-center gap-1 transition-colors"
+                              title="Ver equivalentes con el mismo principio activo"
+                            >
+                              <ArrowLeftRight className="w-3 h-3" />
+                              Equiv.
+                            </button>
+                          )}
+
+                          {!frac ? (
+                            <button
+                              type="button"
+                              onClick={() => addToCart(item, 'caja')}
+                              disabled={!canCaja}
+                              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            >
+                              + Agregar ${pvpCaja.toLocaleString()}
+                            </button>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => addToCart(item, 'caja')}
+                                disabled={!canCaja}
+                                className="px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+                              >
+                                + Caja ${pvpCaja.toLocaleString()}
+                              </button>
+                              {(avail.blisters > 0 || bpc > 1) && (
+                                <button
+                                  type="button"
+                                  onClick={() => addToCart(item, 'blister')}
+                                  disabled={!canBlister}
+                                  className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+                                >
+                                  + Sobre ${pvpBlister.toLocaleString()}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => addToCart(item, 'unidad')}
+                                disabled={!canUnidad}
+                                className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-[11px] font-black disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+                              >
+                                + Unidad ${pvpUnidad.toLocaleString()}
+                              </button>
+                            </>
                           )}
                         </div>
-                        {item.principio_activo && <p className="text-[10px] text-indigo-500 font-bold mb-0.5 mt-0.5 bg-indigo-50 inline-block px-1.5 py-0.5 rounded">Molécula: {item.principio_activo}</p>}
-                        <p className="text-xs font-bold text-slate-400">{item.laboratorio || item.laboratorio_nombre} • {item.codigo || item.codigo_producto}</p>
-                      </button>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {item.principio_activo && (
-                          <button
-                            type="button"
-                            onClick={() => setEquivalentesSource(item)}
-                            className="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-black inline-flex items-center gap-1 transition-colors"
-                            title="Ver equivalentes con el mismo principio activo"
-                          >
-                            <ArrowLeftRight className="w-3 h-3" />
-                            Equiv.
-                          </button>
-                        )}
-                        <div className="text-right">
-                          <p className="text-emerald-600 font-black text-sm">${calculatePV(item.precio_unidad || 0, item.margen_unidad || 0).toLocaleString()} <span className="text-[10px] text-slate-400">/u</span></p>
-                          <p className="text-[10px] font-bold text-slate-400">Stock: {item.cajas}C / {item.blisters}B / {item.unidades}U</p>
-                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -643,50 +990,185 @@ export function FacturacionClient({
                   )}
                   {cart.map(item => {
                     const stockInfo = inventarioInitial.find(p => p.producto_id === item.producto_id);
+                    const bpc = Math.max(1, Number(stockInfo?.blisters_por_caja) || 1)
+                    const upb = Math.max(1, Number(stockInfo?.unidades_por_blister) || 1)
+                    const avail = {
+                      cajas: Number(stockInfo?.cajas) || 0,
+                      blisters: Number(stockInfo?.blisters) || 0,
+                      unidades: Number(stockInfo?.unidades) || 0,
+                    }
+                    const frac = isFracProduct(stockInfo)
+                    const usesUnpacking =
+                      Boolean(stockInfo) &&
+                      (item.cantidad_blisters > avail.blisters || item.cantidad_unidades > avail.unidades)
+
+                    const pvpCaja = stockInfo ? calculatePV(stockInfo.precio_caja || 0, stockInfo.margen_caja ?? stockInfo.porcentaje_ganancia ?? 0) : 0
+                    const pvpBlister = stockInfo ? calculatePV(stockInfo.precio_blister || 0, stockInfo.margen_blister ?? 0) : 0
+                    const pvpUnidad = stockInfo ? calculatePV(stockInfo.precio_unidad || 0, stockInfo.margen_unidad ?? 0) : 0
+
+                    const packSuggestion = stockInfo
+                      ? suggestPackConsolidation(
+                          {
+                            cajas: item.cantidad_cajas,
+                            blisters: item.cantidad_blisters,
+                            unidades: item.cantidad_unidades,
+                          },
+                          avail,
+                          bpc,
+                          upb,
+                          { pvpCaja, pvpBlister, pvpUnidad }
+                        )
+                      : null
+
+                    const isOnlyCaja = item.cantidad_cajas > 0 && item.cantidad_blisters === 0 && item.cantidad_unidades === 0
+                    const isOnlyBlister = item.cantidad_blisters > 0 && item.cantidad_cajas === 0 && item.cantidad_unidades === 0
+                    const isOnlyUnidad = item.cantidad_unidades > 0 && item.cantidad_cajas === 0 && item.cantidad_blisters === 0
+
                     return (
-                      <div key={item.producto_id} className="bg-slate-50 p-3 rounded-2xl flex items-center justify-between gap-3 group border border-transparent hover:border-slate-200 transition-all">
-                        <div className="flex-1 min-w-0 flex flex-col gap-1">
-                          <p className="font-black text-slate-900 text-sm truncate">{item.nombre}</p>
-                          <div className="flex items-center gap-2">
-                            <p className="text-indigo-600 font-black text-base">${item.precio_linea.toLocaleString()}</p>
-                            {item.descuento_porcentaje > 0 && (
-                              <span className="bg-rose-100 text-rose-600 text-[8px] font-black px-1 rounded">-{item.descuento_porcentaje}%</span>
+                      <div key={item.producto_id} className="bg-slate-50 p-3 rounded-2xl flex flex-col gap-2 border border-transparent hover:border-slate-200 transition-all">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex-1 min-w-0 flex flex-col gap-1">
+                            <p className="font-black text-slate-900 text-sm truncate">{item.nombre}</p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-indigo-600 font-black text-base">${item.precio_linea.toLocaleString()}</p>
+                              {item.descuento_porcentaje > 0 && (
+                                <span className="bg-rose-100 text-rose-600 text-[8px] font-black px-1 rounded">-{item.descuento_porcentaje}%</span>
+                              )}
+                              {stockInfo && (
+                                <span className="text-[9px] font-bold text-slate-500 bg-slate-200/50 px-1.5 py-0.5 rounded-md truncate">
+                                  Stock: {stockInfo.cajas}C {stockInfo.blisters}B {stockInfo.unidades}U
+                                </span>
+                              )}
+                              {usesUnpacking && (
+                                <span className="text-[9px] font-black text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-md">
+                                  Destape auto.
+                                </span>
+                              )}
+                            </div>
+
+                            {frac && (
+                              <div className="flex items-center gap-1 pt-0.5 flex-wrap">
+                                <span className="text-[9px] font-bold text-slate-400 mr-0.5">Cambiar rápido:</span>
+                                <button
+                                  type="button"
+                                  onClick={() => replaceCartCounts(item.producto_id, { cajas: 1, blisters: 0, unidades: 0 })}
+                                  disabled={!canFulfillWithUnpacking(avail, { cajas: 1, blisters: 0, unidades: 0 }, bpc, upb)}
+                                  className={`px-2 py-0.5 rounded-md text-[9px] font-black transition-colors disabled:opacity-35 ${
+                                    isOnlyCaja
+                                      ? 'bg-indigo-600 text-white'
+                                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-indigo-50'
+                                  }`}
+                                >
+                                  Solo Caja
+                                </button>
+                                {(avail.blisters > 0 || bpc > 1) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => replaceCartCounts(item.producto_id, { cajas: 0, blisters: 1, unidades: 0 })}
+                                    disabled={!canFulfillWithUnpacking(avail, { cajas: 0, blisters: 1, unidades: 0 }, bpc, upb)}
+                                    className={`px-2 py-0.5 rounded-md text-[9px] font-black transition-colors disabled:opacity-35 ${
+                                      isOnlyBlister
+                                        ? 'bg-emerald-600 text-white'
+                                        : 'bg-white border border-slate-200 text-slate-600 hover:bg-emerald-50'
+                                    }`}
+                                  >
+                                    Solo Sobre
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => replaceCartCounts(item.producto_id, { cajas: 0, blisters: 0, unidades: 1 })}
+                                  disabled={!canFulfillWithUnpacking(avail, { cajas: 0, blisters: 0, unidades: 1 }, bpc, upb)}
+                                  className={`px-2 py-0.5 rounded-md text-[9px] font-black transition-colors disabled:opacity-35 ${
+                                    isOnlyUnidad
+                                      ? 'bg-slate-900 text-white'
+                                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  Solo Unidad
+                                </button>
+                              </div>
                             )}
-                            {stockInfo && (
-                              <span className="text-[9px] font-bold text-slate-500 bg-slate-200/50 px-1.5 py-0.5 rounded-md truncate">
-                                Stock: {stockInfo.cajas}C {stockInfo.blisters}B {stockInfo.unidades}U
-                              </span>
-                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <div className="flex items-center gap-1">
+                              {(['cantidad_cajas', 'cantidad_blisters', 'cantidad_unidades'] as const).map((field, idx) => {
+                                const labels = ['CAJA', 'SOBRE', 'UNIDAD']
+                                const val = item[field]
+
+                                const nextReq = {
+                                  cajas: field === 'cantidad_cajas' ? item.cantidad_cajas + 1 : item.cantidad_cajas,
+                                  blisters: field === 'cantidad_blisters' ? item.cantidad_blisters + 1 : item.cantidad_blisters,
+                                  unidades: field === 'cantidad_unidades' ? item.cantidad_unidades + 1 : item.cantidad_unidades,
+                                }
+                                const canAdd = stockInfo
+                                  ? canFulfillWithUnpacking(avail, nextReq, bpc, upb) &&
+                                    (field === 'cantidad_cajas' ||
+                                      (field === 'cantidad_blisters' && (avail.blisters > 0 || bpc > 1)) ||
+                                      (field === 'cantidad_unidades' && (avail.unidades > 0 || upb > 1 || bpc > 1)))
+                                  : false
+                                const canEverUse =
+                                  field === 'cantidad_cajas'
+                                    ? avail.cajas > 0
+                                    : field === 'cantidad_blisters'
+                                      ? avail.blisters > 0 || (bpc > 1 && avail.cajas > 0)
+                                      : avail.unidades > 0 ||
+                                        ((upb > 1 || bpc > 1) &&
+                                          canFulfillWithUnpacking(avail, { cajas: 0, blisters: 0, unidades: 1 }, bpc, upb))
+
+                                return (
+                                  <div key={field} className={`flex flex-col items-center gap-0.5 ${!canEverUse && val === 0 ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
+                                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{labels[idx]}</span>
+                                    <div className="flex items-center bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
+                                      <button type="button" onClick={() => updateQuantity(item.producto_id, field, val - 1)} disabled={val <= 0} className="p-1.5 hover:bg-slate-100 transition-colors text-slate-700 disabled:opacity-30"><Minus className="w-3.5 h-3.5" /></button>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        aria-label={`Cantidad ${labels[idx]} de ${item.nombre}`}
+                                        value={val}
+                                        onChange={(e) => {
+                                          const raw = parseInt(e.target.value, 10)
+                                          updateQuantity(item.producto_id, field, isNaN(raw) || raw < 0 ? 0 : raw)
+                                        }}
+                                        className="w-9 text-center text-sm font-black text-slate-900 bg-transparent outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                      />
+                                      <button type="button" onClick={() => updateQuantity(item.producto_id, field, val + 1)} disabled={!canAdd} className="p-1.5 hover:bg-slate-100 transition-colors text-slate-700 disabled:opacity-30"><Plus className="w-3.5 h-3.5" /></button>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+
+                            <button type="button" onClick={() => removeFromCart(item.producto_id)} className="p-2 bg-rose-50 text-rose-500 hover:bg-rose-100 rounded-xl shrink-0 transition-colors ml-1">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1 shrink-0">
-                          {(['cantidad_cajas', 'cantidad_blisters', 'cantidad_unidades'] as const).map((field, idx) => {
-                            const labels = ['CAJA', 'BLÍSTER', 'UNIDAD']
-                            const stockFields = ['cajas', 'blisters', 'unidades']
-                            const stockVal = stockInfo ? (stockInfo[stockFields[idx] as any] || 0) : 0
-                            const val = item[field]
-
-                            // Deshabilitar visualmente si el inventario de esta presentación es 0
-                            const isZeroStock = stockVal === 0
-                            const maxReached = val >= stockVal
-
-                            return (
-                              <div key={field} className={`flex flex-col items-center gap-0.5 ${isZeroStock && val === 0 ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
-                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{labels[idx]}</span>
-                                <div className="flex items-center bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
-                                  <button onClick={() => updateQuantity(item.producto_id, field, val - 1)} disabled={val <= 0} className="p-1.5 hover:bg-slate-100 transition-colors text-slate-700 disabled:opacity-30"><Minus className="w-3.5 h-3.5" /></button>
-                                  <span className="w-6 text-center text-sm font-black text-slate-900">{val}</span>
-                                  <button onClick={() => updateQuantity(item.producto_id, field, val + 1)} disabled={maxReached} className="p-1.5 hover:bg-slate-100 transition-colors text-slate-700 disabled:opacity-30"><Plus className="w-3.5 h-3.5" /></button>
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-
-                        <button onClick={() => removeFromCart(item.producto_id)} className="p-2 bg-rose-50 text-rose-500 hover:bg-rose-100 rounded-xl shrink-0 transition-colors ml-1">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {packSuggestion && (
+                          <div className="flex items-center justify-between gap-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-1.5 text-[11px]">
+                            <span className="font-bold text-amber-900">
+                              {packSuggestion.summaryText}
+                              {packSuggestion.savings > 0
+                                ? ` (ahorra $${packSuggestion.savings.toLocaleString()} al cliente)`
+                                : ''}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                replaceCartCounts(
+                                  item.producto_id,
+                                  packSuggestion.suggested,
+                                  'Presentación ajustada al precio justo'
+                                )
+                              }
+                              className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-black text-[10px] shrink-0 transition-colors"
+                            >
+                              Convertir por ${packSuggestion.newBasePrice.toLocaleString()}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )
                   })}
@@ -711,21 +1193,28 @@ export function FacturacionClient({
               {/* Selector de Método de Pago Grande */}
               <div className="mt-2">
                 <p className="text-slate-500 text-[10px] font-black uppercase tracking-tight mb-2 text-center">Método de Pago</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['efectivo', 'tarjeta', 'transferencia'] as const).map(metodo => (
-                    <button
-                      key={metodo}
-                      onClick={() => setMetodoPago(metodo)}
-                      className={`py-3 rounded-xl font-black text-xs transition-all border-2 ${metodoPago === metodo ? 'border-indigo-600 bg-indigo-50 text-indigo-700 shadow-sm' : 'border-slate-100 bg-white text-slate-500 hover:border-slate-300'}`}
-                    >
-                      {metodo.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
+                {tipoVenta === 'credito' ? (
+                  <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-center text-xs font-bold text-amber-800">
+                    Venta a crédito: el saldo se cobrará después en la pestaña Cartera.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {(['efectivo', 'transferencia', 'tarjeta', 'mixto'] as const).map(metodo => (
+                      <button
+                        key={metodo}
+                        type="button"
+                        onClick={() => setMetodoPago(metodo)}
+                        className={`py-2.5 px-2 rounded-xl font-black text-xs transition-all border-2 ${metodoPago === metodo ? 'border-indigo-600 bg-indigo-50 text-indigo-700 shadow-sm' : 'border-slate-100 bg-white text-slate-500 hover:border-slate-300'}`}
+                      >
+                        {metodo === 'mixto' ? 'PAGO MIXTO' : metodo.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Calculadora de Vueltas (Sólo Efectivo) */}
-              {metodoPago === 'efectivo' && (
+              {tipoVenta === 'contado' && metodoPago === 'efectivo' && (
                 <div className="bg-slate-50 rounded-2xl p-4 mt-2 border border-slate-100">
                   <p className="text-slate-600 text-xs font-black uppercase tracking-tight mb-2 text-center">Efectivo Recibido</p>
 
@@ -757,6 +1246,74 @@ export function FacturacionClient({
                 </div>
               )}
 
+              {/* Pago Mixto Exacto */}
+              {tipoVenta === 'contado' && metodoPago === 'mixto' && (
+                <div className="bg-slate-50 rounded-2xl p-4 mt-1 border border-slate-200 space-y-2.5">
+                  <p className="text-slate-700 text-xs font-black uppercase tracking-tight text-center">
+                    Dividir Pago (Solo efectivo entra a gaveta)
+                  </p>
+
+                  {[
+                    {
+                      label: 'Efectivo',
+                      valStr: pagoEfectivoStr,
+                      setter: setPagoEfectivoStr,
+                      otherSum: pagoTarjetaNum + pagoTransferenciaNum,
+                    },
+                    {
+                      label: 'Transferencia (Nequi / Bancolombia)',
+                      valStr: pagoTransferenciaStr,
+                      setter: setPagoTransferenciaStr,
+                      otherSum: pagoEfectivoNum + pagoTarjetaNum,
+                    },
+                    {
+                      label: 'Tarjeta',
+                      valStr: pagoTarjetaStr,
+                      setter: setPagoTarjetaStr,
+                      otherSum: pagoEfectivoNum + pagoTransferenciaNum,
+                    },
+                  ].map((field) => {
+                    const restante = Math.max(0, Math.round(cartTotal - field.otherSum))
+                    return (
+                      <div key={field.label} className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-slate-600">{field.label}</span>
+                          <button
+                            type="button"
+                            onClick={() => field.setter(String(restante))}
+                            className="text-[10px] font-black text-indigo-600 hover:underline"
+                          >
+                            Restante (${restante.toLocaleString()})
+                          </button>
+                        </div>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-black text-sm">$</span>
+                          <input
+                            type="text"
+                            value={field.valStr ? Number(field.valStr.replace(/\D/g, '') || 0).toLocaleString() : ''}
+                            onChange={(e) => field.setter(e.target.value.replace(/\D/g, ''))}
+                            placeholder="0"
+                            className="w-full pl-7 pr-3 py-2 bg-white border border-slate-200 focus:border-indigo-500 rounded-xl font-black text-sm text-slate-900 text-right outline-none"
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                  <div
+                    className={`p-2.5 rounded-xl border text-xs font-black text-center ${
+                      pagoMixtoValidation.ok
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                        : 'bg-amber-50 border-amber-200 text-amber-800'
+                    }`}
+                  >
+                    {pagoMixtoValidation.ok
+                      ? `Cuadrado exacto ($${cartTotal.toLocaleString()})`
+                      : pagoMixtoValidation.error}
+                  </div>
+                </div>
+              )}
+
               {/* Botón de Opciones Avanzadas */}
               <div className="mt-2">
                 <button
@@ -780,7 +1337,15 @@ export function FacturacionClient({
                     </div>
                     <div className="bg-white rounded-xl p-2 border border-slate-100 relative">
                       <p className="text-slate-400 text-[8px] font-black uppercase tracking-tight mb-1">Condición</p>
-                      <select value={tipoVenta} onChange={e => setTipoVenta(e.target.value as any)}
+                      <select
+                        value={tipoVenta}
+                        onChange={(e) => {
+                          const nextVal = e.target.value as 'contado' | 'credito'
+                          setTipoVenta(nextVal)
+                          if (nextVal === 'credito') {
+                            setMetodoPago((prev) => (prev === 'mixto' ? 'efectivo' : prev))
+                          }
+                        }}
                         className="bg-transparent text-slate-700 font-black text-xs outline-none w-full appearance-none pr-6 cursor-pointer relative z-10">
                         <option value="contado">CONTADO</option>
                         <option value="credito">CRÉDITO</option>
@@ -797,8 +1362,8 @@ export function FacturacionClient({
                         className="bg-transparent text-slate-700 font-black text-xs outline-none w-full" />
                     </div>
                     <div className="col-span-2 bg-slate-100 rounded-xl p-2 border border-slate-200 flex justify-between items-center">
-                      <p className="text-slate-400 text-[8px] font-black uppercase tracking-tight">Factura # (Automática)</p>
-                      <p className="text-slate-600 font-black text-xs tracking-widest">{nextFacturaNum ? nextFacturaNum : 'PENDIENTE'}</p>
+                      <p className="text-slate-400 text-[8px] font-black uppercase tracking-tight">Factura (Automática Sede)</p>
+                      <p className="text-slate-600 font-black text-xs tracking-widest">{formatFacturaNum(nextFacturaNum)}</p>
                     </div>
                   </div>
                 )}
@@ -954,7 +1519,7 @@ export function FacturacionClient({
                 </div>
                 <button
                   onClick={handleProcessSale}
-                  disabled={isProcessing || cart.length === 0}
+                  disabled={isProcessing || cart.length === 0 || (tipoVenta === 'contado' && !pagoMixtoValidation.ok)}
                   className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-5 rounded-2xl font-black text-2xl shadow-xl shadow-indigo-600/20 transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-3"
                 >
                   {isProcessing ? <RefreshCw className="w-8 h-8 animate-spin" /> : <CheckCircle2 className="w-8 h-8" />}
@@ -1088,7 +1653,7 @@ export function FacturacionClient({
                             onClick={() => setExpandedFacturaId(expandedFacturaId === f.id ? null : f.id)}>
                             <td className="px-5 py-3 font-black text-indigo-600 flex items-center gap-2">
                               {expandedFacturaId === f.id ? <ChevronDown className="w-3 h-3 rotate-180" /> : <ChevronDown className="w-3 h-3" />}
-                              #{f.numero}
+                              {formatFacturaNum(f.numero)}
                             </td>
                             <td className="px-5 py-3 font-bold text-slate-600">{new Date(f.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
                             <td className="px-5 py-3">
@@ -1096,9 +1661,20 @@ export function FacturacionClient({
                               <p className="text-[10px] text-slate-400 font-bold">{f.cliente_documento}</p>
                             </td>
                             <td className="px-5 py-3">
-                              <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-black uppercase ${f.tipo_venta === 'contado' ? 'bg-slate-100 text-slate-600' : 'bg-amber-100 text-amber-700'}`}>
-                                {f.tipo_venta}
-                              </span>
+                              <div className="flex flex-wrap gap-1">
+                                <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-black uppercase ${f.tipo_venta === 'contado' ? 'bg-slate-100 text-slate-600' : 'bg-amber-100 text-amber-700'}`}>
+                                  {f.tipo_venta}
+                                </span>
+                                {f.metodo_pago === 'mixto' ? (
+                                  <span className="inline-block px-2 py-0.5 rounded text-[9px] font-black uppercase bg-indigo-100 text-indigo-700">
+                                    Mixto
+                                  </span>
+                                ) : (
+                                  <span className="inline-block px-2 py-0.5 rounded text-[9px] font-bold uppercase bg-slate-50 text-slate-500 border border-slate-100">
+                                    {f.metodo_pago}
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="px-5 py-3">
                               <span
@@ -1127,7 +1703,7 @@ export function FacturacionClient({
                                     onClick={async (e) => {
                                       e.stopPropagation()
                                       if (!cajaAbierta) { toast.error('Abre caja para registrar el pago'); return }
-                                      const confirm = window.confirm(`¿Registrar pago de $${Number(f.total).toLocaleString()} para la factura #${f.numero}?`)
+                                      const confirm = window.confirm(`¿Registrar pago de $${Number(f.total).toLocaleString()} para la factura ${formatFacturaNum(f.numero)}?`)
                                       if (!confirm) return
                                       const res = await marcarComoPagada(f.id, cajaAbierta.id, 'efectivo')
                                       if (res.success) { toast.success('Pago registrado'); fetchVentas() } else { toast.error(res.error) }
@@ -1160,6 +1736,14 @@ export function FacturacionClient({
                                   {f.estado_pago === 'anulada' && (
                                     <div className="mb-3 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700 font-bold">
                                       Factura anulada{f.motivo_anulacion ? ` — Motivo: ${f.motivo_anulacion}` : ' (stock devuelto al inventario)'}
+                                    </div>
+                                  )}
+                                  {f.metodo_pago === 'mixto' && (
+                                    <div className="mb-3 rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-2 text-xs text-indigo-800 font-bold flex flex-wrap gap-3">
+                                      <span>Desglose Pago Mixto:</span>
+                                      {Number(f.pago_efectivo || 0) > 0 && <span>Efectivo: ${Number(f.pago_efectivo).toLocaleString()}</span>}
+                                      {Number(f.pago_transferencia || 0) > 0 && <span>Transferencia: ${Number(f.pago_transferencia).toLocaleString()}</span>}
+                                      {Number(f.pago_tarjeta || 0) > 0 && <span>Tarjeta: ${Number(f.pago_tarjeta).toLocaleString()}</span>}
                                     </div>
                                   )}
                                   <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Detalle de Productos</h4>
@@ -1234,7 +1818,7 @@ export function FacturacionClient({
 
                         return (
                           <tr key={f.id} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="px-5 py-3 font-black text-indigo-600">#{f.numero}</td>
+                            <td className="px-5 py-3 font-black text-indigo-600">{formatFacturaNum(f.numero)}</td>
                             <td className="px-5 py-3">
                               <p className="font-bold text-slate-900">{f.cliente_nombre}</p>
                               <p className="text-[10px] text-slate-400 font-bold">OC: {f.orden_compra || 'N/A'}</p>
@@ -1291,7 +1875,7 @@ export function FacturacionClient({
                                   onClick={async () => {
                                     if (!cajaAbierta) { toast.error('Abre caja para registrar el cobro'); return }
                                     const monto = Number(f.saldo_pendiente ?? (esVencido ? totalSinDescuento : totalConDescuento))
-                                    if (!window.confirm(`¿Registrar pago total del saldo (${formatCurrency(monto)}) para la factura #${f.numero}?`)) return
+                                    if (!window.confirm(`¿Registrar pago total del saldo (${formatCurrency(monto)}) para la factura ${formatFacturaNum(f.numero)}?`)) return
                                     const res = Number(f.monto_abonado || 0) > 0
                                       ? await registrarAbonoFactura(f.id, cajaAbierta.id, monto, 'efectivo', 'Pago saldo final')
                                       : await marcarComoPagada(f.id, cajaAbierta.id, 'efectivo')
@@ -1376,6 +1960,12 @@ export function FacturacionClient({
                   <span className="text-slate-500 font-bold">Ventas en Efectivo</span>
                   <span className="font-black text-emerald-600">+ ${kpisVentas.efectivo.toLocaleString()}</span>
                 </div>
+                {totalAbonosEfectivoSesion > 0 && (
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-500 font-bold">Abonos Cartera Efectivo</span>
+                    <span className="font-black text-emerald-600">+ ${totalAbonosEfectivoSesion.toLocaleString()}</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-slate-500 font-bold">Gastos en Efectivo</span>
                   <span className="font-black text-rose-600">- ${totalGastosSesion.toLocaleString()}</span>
@@ -1532,32 +2122,83 @@ export function FacturacionClient({
 
             {equivalentesList.length > 0 ? (
               <div className="space-y-2">
-                {equivalentesList.map((eq) => (
-                  <div
-                    key={eq.producto_id}
-                    className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-black text-sm text-slate-900 truncate">
-                        {eq.nombre_producto}
-                      </p>
-                      <p className="text-[11px] font-bold text-slate-500">
-                        {eq.laboratorio || eq.laboratorio_nombre || 'Genérico'} • Stock: {eq.cajas}C / {eq.blisters}B / {eq.unidades}U
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        addToCart(eq)
-                        setEquivalentesSource(null)
-                        toast.success(`${eq.nombre_producto} agregado`)
-                      }}
-                      className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shrink-0"
+                {equivalentesList.map((eq) => {
+                  const frac = isFracProduct(eq)
+                  const bpc = Math.max(1, Number(eq.blisters_por_caja) || 1)
+                  const upb = Math.max(1, Number(eq.unidades_por_blister) || 1)
+                  const avail = {
+                    cajas: Number(eq.cajas) || 0,
+                    blisters: Number(eq.blisters) || 0,
+                    unidades: Number(eq.unidades) || 0,
+                  }
+                  return (
+                    <div
+                      key={eq.producto_id}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-2xl bg-slate-50 border border-slate-100"
                     >
-                      + Agregar
-                    </button>
-                  </div>
-                ))}
+                      <div className="min-w-0">
+                        <p className="font-black text-sm text-slate-900 truncate">
+                          {eq.nombre_producto}
+                        </p>
+                        <p className="text-[11px] font-bold text-slate-500">
+                          {eq.laboratorio || eq.laboratorio_nombre || 'Genérico'} • Stock: {eq.cajas}C / {eq.blisters}B / {eq.unidades}U
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 shrink-0">
+                        {!frac ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              addToCart(eq, 'caja')
+                              setEquivalentesSource(null)
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black"
+                          >
+                            + Agregar
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              disabled={avail.cajas < 1}
+                              onClick={() => {
+                                addToCart(eq, 'caja')
+                                setEquivalentesSource(null)
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black disabled:opacity-35"
+                            >
+                              + Caja
+                            </button>
+                            {(avail.blisters > 0 || bpc > 1) && (
+                              <button
+                                type="button"
+                                disabled={!canFulfillWithUnpacking(avail, { cajas: 0, blisters: 1, unidades: 0 }, bpc, upb)}
+                                onClick={() => {
+                                  addToCart(eq, 'blister')
+                                  setEquivalentesSource(null)
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black disabled:opacity-35"
+                              >
+                                + Sobre
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              disabled={!canFulfillWithUnpacking(avail, { cajas: 0, blisters: 0, unidades: 1 }, bpc, upb)}
+                              onClick={() => {
+                                addToCart(eq, 'unidad')
+                                setEquivalentesSource(null)
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-[10px] font-black disabled:opacity-35"
+                            >
+                              + Unidad
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             ) : (
               <div className="rounded-2xl bg-slate-50 border border-dashed border-slate-200 p-6 text-center text-xs font-bold text-slate-500">

@@ -4,6 +4,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { requireActiveUser, requireAdmin } from '@/lib/auth/session'
+import { computeSellableStockFromLots } from '@/lib/inventario/fraccionamiento'
+import { validateAndNormalizePago, type MetodoPagoPos } from '@/lib/pos/pago-mixto'
 
 export type FacturaItem = {
   producto_id: string
@@ -20,7 +22,10 @@ export type FacturaItem = {
 export type FacturaData = {
   cliente_nombre: string
   cliente_documento: string
-  metodo_pago: 'efectivo' | 'tarjeta' | 'transferencia'
+  metodo_pago: MetodoPagoPos
+  pago_efectivo?: number
+  pago_tarjeta?: number
+  pago_transferencia?: number
   tipo_venta: 'contado' | 'credito'
   condicion_pago_dias: number           // 0=contado, 30/60/90=crédito
   orden_compra?: string                 // Nro. OC del distribuidor
@@ -42,6 +47,19 @@ export async function crearFactura(data: FacturaData) {
     const auth = await requireActiveUser()
     if (!auth.ok) throw new Error(auth.error)
 
+    const pagoCheck = validateAndNormalizePago({
+      total: data.total,
+      tipoVenta: data.tipo_venta,
+      metodoPago: data.metodo_pago,
+      pagoEfectivo: data.pago_efectivo,
+      pagoTarjeta: data.pago_tarjeta,
+      pagoTransferencia: data.pago_transferencia,
+    })
+
+    if (!pagoCheck.ok) {
+      throw new Error(pagoCheck.error)
+    }
+
     const itemsRpc = data.items.map(item => ({
       producto_id: item.producto_id,
       cantidad_cajas: item.cantidad_cajas,
@@ -49,10 +67,13 @@ export async function crearFactura(data: FacturaData) {
       cantidad_unidades: item.cantidad_unidades,
     }))
 
+    const docClean = data.cliente_documento?.trim()
+    const documentoFinal = !docClean || docClean === '000000000' ? '222222222222' : docClean
+
     const { data: rpcResult, error: rpcError } = await supabase.rpc('crear_factura_tx', {
       p_cliente_nombre: data.cliente_nombre,
-      p_cliente_documento: data.cliente_documento,
-      p_metodo_pago: data.metodo_pago,
+      p_cliente_documento: documentoFinal,
+      p_metodo_pago: pagoCheck.metodoPago,
       p_tipo_venta: data.tipo_venta,
       p_condicion_pago_dias: data.condicion_pago_dias,
       p_orden_compra: data.orden_compra || '',
@@ -61,6 +82,9 @@ export async function crearFactura(data: FacturaData) {
       p_vendedor_id: data.vendedor_id || auth.user.id,
       p_caja_sesion_id: data.caja_sesion_id,
       p_items: itemsRpc,
+      p_pago_efectivo: pagoCheck.pagoEfectivo,
+      p_pago_tarjeta: pagoCheck.pagoTarjeta,
+      p_pago_transferencia: pagoCheck.pagoTransferencia,
     })
 
     if (rpcError) throw new Error(rpcError.message)
@@ -104,12 +128,16 @@ export async function getFacturas() {
 
 export async function getInventarioPOS() {
   const supabase = await createClient()
-  const [{ data, error }, { data: productosFormula }] = await Promise.all([
+  const [{ data, error }, { data: productosFormula }, { data: lotesData }] = await Promise.all([
     supabase
       .from('vista_inventario_completo' as any)
       .select('*')
       .order('nombre_producto', { ascending: true }),
     supabase.from('productos').select('id, requiere_formula'),
+    supabase
+      .from('inventario_lotes')
+      .select('id, inventario_id, producto_id, lote, fecha_vencimiento, cajas, blisters, unidades, costo_caja, created_at')
+      .order('fecha_vencimiento', { ascending: true }),
   ])
 
   if (error) {
@@ -121,10 +149,38 @@ export async function getInventarioPOS() {
     (productosFormula || []).map((p) => [p.id, Boolean(p.requiere_formula)])
   )
 
-  return ((data || []) as any[]).map((item) => ({
-    ...item,
-    requiere_formula: item.producto_id ? formulaMap.get(item.producto_id) ?? false : false,
-  }))
+  const lotesByInv = new Map<string, NonNullable<typeof lotesData>>()
+  for (const lote of lotesData || []) {
+    const arr = lotesByInv.get(lote.inventario_id) || []
+    arr.push(lote)
+    lotesByInv.set(lote.inventario_id, arr)
+  }
+
+  return ((data || []) as any[]).map((item) => {
+    const itemLotes = item.inventario_id ? lotesByInv.get(item.inventario_id) || [] : []
+    const summary = computeSellableStockFromLots(itemLotes, {
+      lote: item.lote,
+      fecha_vencimiento: item.fecha_vencimiento,
+      cajas: item.cajas,
+      blisters: item.blisters,
+      unidades: item.unidades,
+      precio_caja: item.precio_caja,
+    })
+
+    return {
+      ...item,
+      cajas: summary.cajas,
+      blisters: summary.blisters,
+      unidades: summary.unidades,
+      cajas_fisicas: summary.cajas_fisicas,
+      blisters_fisicos: summary.blisters_fisicos,
+      unidades_fisicas: summary.unidades_fisicas,
+      tiene_stock_vencido: summary.tiene_stock_vencido,
+      todo_vencido: summary.todo_vencido,
+      lotes_activos: summary.lotes_ordenados,
+      requiere_formula: item.producto_id ? formulaMap.get(item.producto_id) ?? false : false,
+    }
+  })
 }
 
 export async function getVendedores() {
@@ -149,17 +205,35 @@ export async function marcarComoPagada(facturaId: string, cajaSesionId: string, 
     const auth = await requireActiveUser()
     if (!auth.ok) throw new Error(auth.error)
 
-    const { error } = await supabase
+    const { data: fac, error: facErr } = await supabase
       .from('facturas')
-      .update({
-        estado_pago: 'pagado',
-        metodo_pago: metodoPago,
-        caja_sesion_id: cajaSesionId
-      } as any)
+      .select('total, monto_abonado, estado_pago')
       .eq('id', facturaId)
+      .single()
 
-    if (error) throw error
+    if (facErr || !fac) throw new Error('Factura no encontrada')
+    if (fac.estado_pago !== 'pendiente') {
+      throw new Error('Esta factura no está pendiente de cobro')
+    }
+
+    const saldoPendiente = Math.max(0, Number(fac.total || 0) - Number(fac.monto_abonado || 0))
+    if (saldoPendiente <= 0) {
+      throw new Error('La factura no tiene saldo pendiente por cobrar')
+    }
+
+    const { error } = await supabase.rpc('registrar_abono_factura_tx', {
+      p_factura_id: facturaId,
+      p_caja_sesion_id: cajaSesionId,
+      p_monto: saldoPendiente,
+      p_metodo_pago: metodoPago || 'efectivo',
+      p_notas: 'Cobro total de cartera',
+    })
+
+    if (error) throw new Error(error.message)
+
     revalidatePath('/facturas')
+    revalidatePath('/dashboard')
+    revalidatePath('/reportes')
     return { success: true }
   } catch (error: any) {
     console.error('Error al marcar como pagada:', error)

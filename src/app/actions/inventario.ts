@@ -5,18 +5,23 @@ import { revalidatePath } from 'next/cache'
 import { UpsertInventarioSchema, UpsertInventarioInput } from '@/lib/validations/inventario.schema'
 import { requireAdmin } from '@/lib/auth/session'
 import type { CsvInventarioRow } from '@/lib/inventario/csv-import'
+import { computeSellableStockFromLots } from '@/lib/inventario/fraccionamiento'
 
 /**
- * Obtiene el inventario completo con datos de productos y laboratorios
+ * Obtiene el inventario completo con datos de productos, laboratorios y lotes activos (FEFO)
  */
 export async function getInventario() {
   const supabase = await createClient()
-  const [{ data, error }, { data: productosFormula }] = await Promise.all([
+  const [{ data, error }, { data: productosFormula }, { data: lotesData }] = await Promise.all([
     supabase
       .from('vista_inventario_completo')
       .select('*')
       .order('nombre_producto', { ascending: true }),
     supabase.from('productos').select('id, requiere_formula'),
+    supabase
+      .from('inventario_lotes')
+      .select('id, inventario_id, producto_id, lote, fecha_vencimiento, cajas, blisters, unidades, costo_caja, created_at')
+      .order('fecha_vencimiento', { ascending: true }),
   ])
 
   if (error) {
@@ -28,10 +33,58 @@ export async function getInventario() {
     (productosFormula || []).map((p) => [p.id, Boolean(p.requiere_formula)])
   )
 
-  return (data || []).map((item) => ({
-    ...item,
-    requiere_formula: item.producto_id ? formulaMap.get(item.producto_id) ?? false : false,
-  }))
+  const lotesByInv = new Map<string, NonNullable<typeof lotesData>>()
+  for (const lote of lotesData || []) {
+    const arr = lotesByInv.get(lote.inventario_id) || []
+    arr.push(lote)
+    lotesByInv.set(lote.inventario_id, arr)
+  }
+
+  return (data || []).map((item) => {
+    const itemLotes = item.inventario_id ? lotesByInv.get(item.inventario_id) || [] : []
+    const summary = computeSellableStockFromLots(itemLotes, {
+      lote: item.lote,
+      fecha_vencimiento: item.fecha_vencimiento,
+      cajas: item.cajas,
+      blisters: item.blisters,
+      unidades: item.unidades,
+      precio_caja: item.precio_caja,
+    })
+
+    return {
+      ...item,
+      requiere_formula: item.producto_id ? formulaMap.get(item.producto_id) ?? false : false,
+      lotes_activos: summary.lotes_ordenados,
+      tiene_stock_vencido: summary.tiene_stock_vencido,
+      todo_vencido: summary.todo_vencido,
+    }
+  })
+}
+
+export async function darBajaLote(loteId: string, motivo: string) {
+  const supabase = await createClient()
+  try {
+    const auth = await requireAdmin()
+    if (!auth.ok) throw new Error(auth.error)
+
+    const { data, error } = await supabase.rpc('dar_baja_lote_tx', {
+      p_lote_id: loteId,
+      p_motivo: motivo.trim() || 'Baja por vencimiento o deterioro',
+    })
+
+    if (error) throw new Error(error.message)
+
+    revalidatePath('/inventario')
+    revalidatePath('/facturas')
+    revalidatePath('/dashboard')
+    revalidatePath('/reportes')
+    return { success: true, data }
+  } catch (error: unknown) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'No se pudo dar de baja el lote',
+    }
+  }
 }
 
 export async function getProductos() {

@@ -54,6 +54,13 @@ En la parte superior puedes hacer clic sobre cualquier tarjeta para filtrar al i
 5. Si el medicamento requiere receta médica, activa la casilla **Requiere Fórmula Médica / Medicamento Controlado (Rx)** (también disponible en la columna `requiere_formula` de la plantilla CSV con `SI` o `NO`).
 6. Cada cambio queda guardado en la **Bitácora de Auditoría** del producto y puede exportarse con **Auditoría Excel**.
 
+### 3.2.1 Control Multi-Lote FEFO y Baja de Vencidos (sin perder mercancía nueva)
+En droguería es muy común tener aún existencias de un medicamento con un lote antiguo mientras llega mercancía nueva con otro lote y otra fecha de vencimiento:
+- **Se mantienen los dos lotes por separado:** cada vez que registras una compra con un lote o vencimiento distinto, el sistema **no borra ni sobrescribe** el lote anterior.
+  > **Ejemplo:** tienes `2 cajas` de Acetaminofén **Lote A (vence en enero)** y te llegan `5 cajas` del **Lote B (vence en noviembre)**. El sistema suma `7 cajas` disponibles en total, pero por dentro recuerda exactamente cuántas pertenecen al Lote A y cuántas al Lote B.
+- **Salida automática FEFO (*Primero en vencer, primero en salir*):** cada vez que vendes en el mostrador, el sistema descuenta primero del lote vigente más próximo a vencer (el Lote A) hasta agotarlo, y solo después empieza a descontar del Lote B.
+- **Ver lotes y dar de baja un lote vencido:** desde la tabla de **Inventario**, pulsa la insignia **N Lotes (FEFO)** o el ícono de capas en acciones para ver todos los lotes ordenados por prioridad de salida y usar el botón **Dar de baja** si necesitas retirar un lote vencido o averiado sin tocar los lotes nuevos vigentes.
+
 ### 3.3 Importación Masiva desde Excel / CSV (hasta 500 productos por carga)
 Ideal para arrancar una droguería nueva en minutos o actualizar precios/lotes por lote:
 1. En **Inventario**, haz clic en el botón verde **Importar CSV / Excel**.
@@ -72,14 +79,48 @@ Ideal para arrancar una droguería nueva en minutos o actualizar precios/lotes p
 Antes de registrar ventas, el vendedor o administrador debe hacer clic en **Abrir Caja** e ingresar la base en efectivo inicial de la gaveta. En la barra superior siempre verás si la caja está **Caja Abierta** (verde) o **Caja Cerrada** (ámbar).
 
 ### 4.2 Venta Rápida en Mostrador (POS)
-1. **Buscar o escanear producto:** escribe el nombre o pasa el lector de código de barras (el sistema detecta automáticamente el código escaneado).
-   - **Equivalentes por Principio Activo (`Equiv.`):** si el producto buscado está agotado o el cliente pide otra marca, haz clic en el botón **Equiv.** para ver al instante alternativas disponibles en stock con la misma molécula y agregarlas directo al carrito.
-   - **Alerta de Fórmula Médica (`Rx Fórmula`):** los medicamentos marcados como controlados o de venta bajo fórmula muestran una etiqueta `Rx Fórmula` y un aviso preventivo dentro del carrito para que el vendedor verifique la receta antes de dispensar.
-2. **Elegir presentación:** agrega **Caja**, **Blíster** o **Unidad** al carrito según la necesidad del cliente.
-3. **Cliente:** por defecto permite facturación ágil de mostrador (**Consumidor Final**) sin frenar la fila, o puedes buscar/crear un cliente con nombre, cédula/NIT, teléfono y correo.
-4. **Descuentos, IVA y pago:** aplica descuento porcentual si corresponde, selecciona IVA (`0%`, `5%` o `19%`), elige tipo de venta (**Contado** o **Crédito** con días de plazo) y método de pago (**Efectivo** con cálculo automático de devuelta, **Tarjeta** o **Transferencia**).
-5. **Emitir, Imprimir en Tirilla POS o Enviar por WhatsApp:** al confirmar, el sistema descuenta el inventario de forma atómica (si falta stock bloquea la venta para evitar saldos negativos) y abre el comprobante donde puedes:
-   - Elegir el formato exacto de impresión: **Tirilla 80mm**, **Tirilla 58mm** o **Carta**, incluyendo los datos fiscales y el mensaje personalizado al pie de tu droguería.
+1. **Buscar o escanear producto (el vendedor elige directo qué pidió el cliente):** escribe el nombre o pasa el lector de código de barras.
+   - **Botones directos según lo que pidió el cliente (`+ Caja` / `+ Sobre` / `+ Unidad`):** al buscar un medicamento fraccionable, verás 3 botones con su precio para que el sistema **no adivine**:
+     - Si el cliente dice *"deme un sobre"*, tocas **`+ Sobre`** y entra **solo `1 sobre`** al carrito (sin meter pastillas sueltas por error).
+     - Si es un producto único que no se parte (como un jarabe o una crema), solo aparece el botón **`+ Agregar`**.
+   - **Si usaste pistola lectora de código de barras + teclado rápido:** como el lector escanea la caja sin saber si el cliente quiere caja, sobre o pastillas, dentro del carrito tienes los botones **`Solo Caja` | `Solo Sobre` | `Solo Unidad`** para cambiar la presentación en un toque sin dejar cantidades viejas mezcladas. Además, puedes **escribir el número directamente con el teclado** (ej. escribir `15` o `20` pastillas en lugar de presionar `+` veinte veces).
+   - **Aviso de conversión justa (cuidar el bolsillo del cliente):** si un sobre de `10` pastillas cuesta `$1.500` y cada pastilla suelta vale `$200`, al marcar `10` pastillas sueltas (`$2.000`) el carrito te muestra el aviso **`10U equivale a 1 Blíster • Convertir por $1.500`** para cobrar el precio justo con un clic.
+   - **Equivalentes por Principio Activo (`Equiv.`):** si el producto buscado está agotado o el cliente pide otra marca, haz clic en **Equiv.** para ver alternativas disponibles con la misma molécula y agregarlas directo en Caja, Sobre o Unidad.
+   - **Bloqueo Sanitario de Medicamentos Vencidos:** si un medicamento solo tiene existencias vencidas, aparece marcado como **VENCIDO • BLOQUEADO** y no se puede vender por accidente. Si conviven un lote viejo vencido y uno nuevo vigente, solo permite vender del lote vigente.
+   - **Alerta de Fórmula Médica (`Rx Fórmula`):** los medicamentos controlados o de venta bajo fórmula muestran una etiqueta `Rx Fórmula` y un aviso preventivo en el carrito antes de facturar.
+
+2. **Cómo funciona el Destape Automático (`Caja → Blíster/Sobre → Unidad`):**  
+   En una droguería, muchas veces tienes cajas o sobres completos en el estante y **`0` pastillas sueltas** registradas, pero el cliente te pide pastillas sueltas. **No necesitas ir a Inventario a abrir cajas a mano:** el botón **`+ Unidad`** (o **`+ Sobre`**) sigue habilitado y al facturar el sistema destapa solo lo necesario y actualiza las presentaciones reales.
+
+   > **Ejemplo A — Sacar 2 pastillas de un sobre (blíster de 10 unidades):**  
+   > - **Lo que tienes antes de vender:** `0 Cajas | 1 Sobre | 0 Unidades`  
+   > - **Lo que vendes:** `2 Unidades` (pastillas)  
+   > - **Qué hace el sistema al facturar:** como cortaste `2` pastillas de ese sobre, ese sobre ya deja de ser un sobre completo. El sistema descuenta el `1 Sobre` cerrado y deja las **`8 Unidades`** sobrantes sueltas.  
+   > - **Lo que queda en inventario:** **`0 Cajas | 0 Sobres | 8 Unidades`**.  
+   > - **En la siguiente venta:** si minutos después otro cliente pide `3` pastillas, el sistema las toma primero de esas **`8 Unidades`** sueltas (dejando `5`), sin abrir otro sobre hasta que se acaben.
+
+   > **Ejemplo B — Sacar 2 pastillas cuando solo tienes 1 Caja sellada (10 sobres × 10 unidades = 100 pastillas):**  
+   > - **Lo que tienes antes de vender:** `1 Caja | 0 Sobres | 0 Unidades`  
+   > - **Lo que vendes:** `2 Unidades`  
+   > - **Qué hace el sistema al facturar:** abre esa `1 Caja` → deja **`9 Sobres`** cerrados quietos → abre **solo `1 Sobre`** para sacar las `2` pastillas → guarda las **`8 Unidades`** sobrantes sueltas.  
+   > - **Lo que queda en inventario:** **`0 Cajas | 9 Sobres | 8 Unidades`** (`98` pastillas exactas en total).  
+   > - **Regla de seguridad:** si ya abriste la caja y te quedan `0 Cajas | 9 Sobres | 8 Unidades`, el sistema ya **no** te deja vender una "Caja sellada" porque físicamente no hay una caja cerrada completa.
+
+3. **Cliente:** por defecto permite facturación ágil de mostrador (**Consumidor Final** con documento `222222222222`) sin frenar la fila, o puedes buscar/crear un cliente con nombre, cédula/NIT, teléfono y correo.
+
+4. **Descuentos, IVA y Métodos de Pago (incluido Pago Mixto exacto):**
+   - Aplica descuento porcentual si corresponde, selecciona IVA (`0%`, `5%` o `19%`) y elige tipo de venta (**Contado** o **Crédito** con días de plazo).
+   - En ventas de contado puedes elegir **Efectivo** (con calculadora de devuelta), **Transferencia**, **Tarjeta** o **PAGO MIXTO**:
+   - **¿Cómo funciona el Pago Mixto sin errores de caja?**  
+     > **Ejemplo:** una venta suma **`$35.000`** y el cliente paga **`$20.000` en billete** y **`$15.000` por Nequi/Transferencia**.  
+     > 1. Tocas **PAGO MIXTO**.  
+     > 2. En **Efectivo** escribes `20000`.  
+     > 3. En **Transferencia** pulsas **Restante (`$15.000`)** o escribes `15000`.  
+     > 4. Cuando ves el aviso verde **`Cuadrado exacto ($35.000)`**, el botón **FACTURAR E IMPRIMIR** se habilita (si falta o sobra plata, el sistema bloquea el cobro para evitar errores de digitación).  
+     > 5. **Impacto en caja:** al cerrar turno, **únicamente los `$20.000` en efectivo suman al dinero esperado en gaveta**, mientras que los `$15.000` de Nequi se reflejan en Transferencias en Ventas del Día, tirilla y Reportes.
+
+5. **Emitir, Imprimir en Tirilla POS o Enviar por WhatsApp:** al confirmar, el sistema asigna un **consecutivo independiente exclusivo de tu droguería** (con prefijo opcional si lo configuraste), descuenta primero el lote vigente más próximo a vencer (FEFO) de forma atómica y abre el comprobante donde puedes:
+   - Elegir el formato exacto de impresión: **Tirilla 80mm**, **Tirilla 58mm** o **Carta**, incluyendo datos fiscales, desglose de pago mixto si aplica, resolución opcional y pie de página personalizado.
    - Escribir opcionalmente el celular del cliente y presionar **WhatsApp** para enviarle el resumen de la compra directamente sin costo adicional.
 
 ### 4.3 Registro de Gastos de Caja Menor
@@ -109,15 +150,15 @@ Al finalizar el turno, presiona **Cerrar Caja**:
 ## 5. Compras, Proveedores, Reportes, Personal y Cronograma (Admin)
 
 - **Proveedores:** directorio de distribuidores con NIT, contacto, correo y días de crédito pactados.
-- **Compras y Cuentas por Pagar a Proveedores:** registro de facturas de compra a proveedores (pagadas al contado desde caja, transferencia o a crédito/pendiente), con tarjetas de resumen de deuda total, filtro **Por Pagar** y botón **Pagar** para liquidar facturas pendientes con el método elegido.
+- **Compras, Recepción Técnica Multi-Lote y Cuentas por Pagar:** registro de facturas de compra a proveedores con **Lote**, **Fecha de Vencimiento** y **Estado Técnico (Conforme / Con observación)** por cada producto. Si ya existían cajas de un lote viejo, el sistema conserva ambos lotes separados (FEFO) y recalcula automáticamente el costo de caja, blíster y unidad. Desde **Ver Detalles / Acta** puedes imprimir el **Acta de Recepción Técnica de Medicamentos** (con firmas para Secretaría de Salud), además de filtrar **Por Pagar** y liquidar facturas pendientes con el botón **Pagar**.
 - **Reportes, Arqueos, Pedido Sugerido y Auditoría Global:** organizado en 4 pestañas clave para la toma de decisiones:
-  - **Resumen Financiero + Exportar Contable CSV:** métricas diarias y semanales de ingresos reales vs egresos, medios de pago, top 10 de productos más vendidos y selector de mes para descargar todas las facturas del periodo en **CSV listo para Excel / contador**.
+  - **Resumen Financiero + Exportar Contable CSV:** métricas diarias y semanales de ingresos reales vs egresos (repartiendo automáticamente los pagos mixtos en efectivo, tarjeta y transferencia), top 10 de productos más vendidos y selector de mes para descargar todas las facturas del periodo en **CSV listo para Excel / contador**.
   - **Arqueos de Caja:** historial completo de aperturas y cierres de turno con efectivo esperado, efectivo contado por el vendedor, cálculo automático de **cuadrada / sobrante / faltante** y exportación a Excel.
   - **Pedido Sugerido Inteligente:** cruza automáticamente tus ventas de los últimos 30 días, stock mínimo y existencias actuales para recomendarte exactamente **cuántas cajas pedir** de cada medicamento, con exportación directa a Excel.
-  - **Auditoría Global:** bitácora buscable con fecha, usuario y detalle de acciones críticas (creación/edición/eliminación de usuarios, anulaciones de facturas, abonos, pagos a proveedores y cierres de caja).
+  - **Auditoría Global:** bitácora buscable con fecha, usuario y detalle de acciones críticas (creación/edición/eliminación de usuarios, anulaciones de facturas, abonos, bajas de lotes, pagos a proveedores y cierres de caja).
 - **Usuarios (Gestión de Personal):** crea cuentas de **Vendedor** o **Administrador** dentro del cupo de usuarios de tu plan, edita datos, cambia contraseñas o activa/inactiva personal al instante.
 - **Cronograma:** programación mensual de turnos del equipo farmacéutico para organizar aperturas y cierres.
-- **Mi Perfil y Datos Fiscales de Sede:** cambio seguro de contraseña propia para cualquier usuario, y panel exclusivo para **Administradores** donde pueden actualizar el **NIT, régimen, teléfono, dirección y el mensaje al pie de tirilla/factura** de su droguería sin depender de soporte técnico.
+- **Mi Perfil y Datos Fiscales de Sede:** cambio seguro de contraseña propia para cualquier usuario, y panel exclusivo para **Administradores** donde pueden actualizar el **NIT, régimen, teléfono, dirección, prefijo propio de numeración (opcional), resolución DIAN/nota fiscal (opcional) y el mensaje al pie de tirilla/factura** de su droguería sin depender de soporte técnico.
 
 ---
 

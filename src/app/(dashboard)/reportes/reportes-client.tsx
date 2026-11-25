@@ -30,6 +30,9 @@ interface ReporteFactura {
   total: number | null
   metodo_pago: string | null
   estado_pago: string | null
+  pago_efectivo?: number | null
+  pago_tarjeta?: number | null
+  pago_transferencia?: number | null
 }
 
 interface ReporteCompra {
@@ -74,10 +77,19 @@ export default function ReportesClient({
       gastosNomina = 0
 
     facturas.forEach((f) => {
+      if (f.estado_pago === 'anulada') return
       const t = Number(f.total) || 0
-      if (f.metodo_pago === 'efectivo') ventasEfectivo += t
-      else if (f.metodo_pago === 'tarjeta') ventasTarjeta += t
-      else if (f.metodo_pago === 'transferencia') ventasTransferencia += t
+      if (f.metodo_pago === 'mixto') {
+        ventasEfectivo += Number(f.pago_efectivo) || 0
+        ventasTarjeta += Number(f.pago_tarjeta) || 0
+        ventasTransferencia += Number(f.pago_transferencia) || 0
+      } else if (f.metodo_pago === 'efectivo') {
+        ventasEfectivo += t
+      } else if (f.metodo_pago === 'tarjeta') {
+        ventasTarjeta += t
+      } else if (f.metodo_pago === 'transferencia') {
+        ventasTransferencia += t
+      }
     })
 
     compras.forEach((c) => {
@@ -158,6 +170,9 @@ export default function ReportesClient({
         'Documento',
         'Tipo Venta',
         'Metodo Pago',
+        'Pago Efectivo',
+        'Pago Tarjeta',
+        'Pago Transferencia',
         'Estado',
         'Subtotal',
         'Descuento',
@@ -174,6 +189,9 @@ export default function ReportesClient({
           `"${(f.cliente_documento || '').replace(/"/g, '""')}"`,
           f.tipo_venta || '',
           f.metodo_pago || '',
+          f.pago_efectivo || 0,
+          f.pago_tarjeta || 0,
+          f.pago_transferencia || 0,
           f.estado_pago || '',
           f.subtotal_bruto || 0,
           f.descuento_monto || 0,

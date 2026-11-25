@@ -32,6 +32,17 @@ import {
   recordFailedLoginAttempt,
   clearLoginAttempts,
 } from '../src/lib/auth/login-rate-limit.ts'
+import {
+  isLotExpired,
+  computeSellableStockFromLots,
+  canFulfillWithUnpacking,
+  simulateUnpackingAndDeduct,
+  suggestPackConsolidation,
+} from '../src/lib/inventario/fraccionamiento.ts'
+import {
+  validateAndNormalizePago,
+  calcularEfectivoEsperadoCaja,
+} from '../src/lib/pos/pago-mixto.ts'
 
 test('calculatePV calcula el precio de venta según margen sobre venta', () => {
   assert.equal(calculatePV(10000, 20), 12500)
@@ -381,4 +392,177 @@ test('checkLoginRateLimit bloquea tras maxAttempts intentos fallidos y limpia al
 
   clearLoginAttempts(key)
   assert.equal(checkLoginRateLimit(key, 3, 1_500).allowed, true)
+})
+
+test('Destape automático permite vender blísters o unidades desde cajas cerradas sin re-empacar hacia arriba', () => {
+  const stockSoloCajas = { cajas: 2, blisters: 0, unidades: 0 }
+  assert.equal(
+    canFulfillWithUnpacking(stockSoloCajas, { cajas: 0, blisters: 0, unidades: 5 }, 10, 10),
+    true
+  )
+  const res = simulateUnpackingAndDeduct(
+    stockSoloCajas,
+    { cajas: 0, blisters: 1, unidades: 5 },
+    10,
+    10
+  )
+  assert.equal(res.ok, true)
+  assert.equal(res.cajas, 1)
+  assert.equal(res.blisters, 8)
+  assert.equal(res.unidades, 5)
+  assert.equal(res.cajasDestapadas, 1)
+  assert.equal(res.blistersDestapados, 1)
+
+  assert.equal(
+    canFulfillWithUnpacking(
+      { cajas: 1, blisters: 15, unidades: 0 },
+      { cajas: 2, blisters: 0, unidades: 0 },
+      10,
+      10
+    ),
+    false
+  )
+})
+
+test('computeSellableStockFromLots filtra lotes vencidos y ordena vigentes por FEFO', () => {
+  const hoy = '2026-11-25'
+  assert.equal(isLotExpired('2026-11-24', hoy), true)
+  assert.equal(isLotExpired('2026-11-25', hoy), false)
+
+  const summary = computeSellableStockFromLots(
+    [
+      { id: '1', lote: 'VIEJO-VENCIDO', fecha_vencimiento: '2026-10-01', cajas: 3, blisters: 0, unidades: 0 },
+      { id: '2', lote: 'NUEVO-FEB', fecha_vencimiento: '2027-06-01', cajas: 4, blisters: 1, unidades: 0 },
+      { id: '3', lote: 'PROXIMO-ENE', fecha_vencimiento: '2027-01-15', cajas: 2, blisters: 0, unidades: 5 },
+    ],
+    null,
+    hoy
+  )
+  assert.equal(summary.cajas, 6)
+  assert.equal(summary.cajas_fisicas, 9)
+  assert.equal(summary.tiene_stock_vencido, true)
+  assert.equal(summary.todo_vencido, false)
+  assert.equal(summary.lotes_ordenados[0].lote, 'PROXIMO-ENE')
+  assert.equal(summary.lotes_ordenados[2].vencido, true)
+
+  const soloVencido = computeSellableStockFromLots(
+    [{ id: '1', lote: 'EXP', fecha_vencimiento: '2026-01-01', cajas: 5, blisters: 0, unidades: 0 }],
+    null,
+    hoy
+  )
+  assert.equal(soloVencido.todo_vencido, true)
+  assert.equal(soloVencido.cajas, 0)
+})
+
+test('validateAndNormalizePago y calcularEfectivoEsperadoCaja cuadran exactamente con pago mixto y abonos', () => {
+  const descuadrado = validateAndNormalizePago({
+    total: 35000,
+    tipoVenta: 'contado',
+    metodoPago: 'mixto',
+    pagoEfectivo: 20000,
+    pagoTransferencia: 10000,
+    pagoTarjeta: 0,
+  })
+  assert.equal(descuadrado.ok, false)
+
+  const exacto = validateAndNormalizePago({
+    total: 35000,
+    tipoVenta: 'contado',
+    metodoPago: 'mixto',
+    pagoEfectivo: 20000,
+    pagoTransferencia: 15000,
+    pagoTarjeta: 0,
+  })
+  assert.equal(exacto.ok, true)
+  if (exacto.ok) {
+    assert.equal(exacto.metodoPago, 'mixto')
+    assert.equal(exacto.pagoEfectivo, 20000)
+    assert.equal(exacto.pagoTransferencia, 15000)
+  }
+
+  const soloTarjetaEnMixto = validateAndNormalizePago({
+    total: 18000,
+    tipoVenta: 'contado',
+    metodoPago: 'mixto',
+    pagoEfectivo: 0,
+    pagoTarjeta: 18000,
+    pagoTransferencia: 0,
+  })
+  assert.equal(soloTarjetaEnMixto.ok, true)
+  if (soloTarjetaEnMixto.ok) {
+    assert.equal(soloTarjetaEnMixto.metodoPago, 'tarjeta')
+  }
+
+  const esperado = calcularEfectivoEsperadoCaja({
+    montoApertura: 50000,
+    facturasSesion: [
+      { estado_pago: 'pagado', tipo_venta: 'contado', metodo_pago: 'mixto', total: 35000, pago_efectivo: 20000 },
+      { estado_pago: 'pagado', tipo_venta: 'contado', metodo_pago: 'efectivo', total: 10000, pago_efectivo: 10000 },
+      { estado_pago: 'anulada', tipo_venta: 'contado', metodo_pago: 'efectivo', total: 99000, pago_efectivo: 99000 },
+      { estado_pago: 'pagado', tipo_venta: 'credito', metodo_pago: 'efectivo', total: 40000, monto_abonado: 40000 },
+    ],
+    abonosEfectivoTotal: 40000,
+    gastosEfectivoTotal: 5000,
+    comprasEfectivoTotal: 15000,
+  })
+  assert.equal(esperado, 50000 + 20000 + 10000 + 40000 - 5000 - 15000)
+})
+
+test('CompraSchema valida detalle con lote, fecha_vencimiento y estado_recepcion', () => {
+  const valid = CompraSchema.safeParse({
+    proveedor_id: '82d5f924-0465-4e49-9e34-6da6e8b731ac',
+    numero_factura: 'FC-901',
+    total: 120000,
+    estado_pago: 'pendiente',
+    estado_recepcion: 'conforme',
+    detalles: [
+      {
+        producto_id: '52d5f924-0465-4e49-9e34-6da6e8b731ab',
+        cantidad: 5,
+        costo_unitario: 24000,
+        lote: 'L2511B',
+        fecha_vencimiento: '2028-05-30',
+      },
+    ],
+  })
+  assert.equal(valid.success, true)
+})
+
+test('suggestPackConsolidation sugiere convertir unidades sueltas a blíster o caja al precio justo', () => {
+  const avail = { cajas: 2, blisters: 0, unidades: 0 }
+  const prices = { pvpCaja: 12000, pvpBlister: 1500, pvpUnidad: 200 }
+
+  // 10 unidades = 1 blíster ($1.500 vs $2.000)
+  const sug10 = suggestPackConsolidation(
+    { cajas: 0, blisters: 0, unidades: 10 },
+    avail,
+    10,
+    10,
+    prices
+  )
+  assert.ok(sug10)
+  assert.deepEqual(sug10.suggested, { cajas: 0, blisters: 1, unidades: 0 })
+  assert.equal(sug10.newBasePrice, 1500)
+  assert.equal(sug10.savings, 500)
+
+  // 12 unidades = 1 blíster + 2 unidades
+  const sug12 = suggestPackConsolidation(
+    { cajas: 0, blisters: 0, unidades: 12 },
+    avail,
+    10,
+    10,
+    prices
+  )
+  assert.ok(sug12)
+  assert.deepEqual(sug12.suggested, { cajas: 0, blisters: 1, unidades: 2 })
+
+  // Si ya solo hay unidades sueltas (0 cajas y 0 blísters), no debe sugerir convertir a blíster
+  const sinCajaParaRespaldo = suggestPackConsolidation(
+    { cajas: 0, blisters: 0, unidades: 10 },
+    { cajas: 0, blisters: 0, unidades: 12 },
+    10,
+    10,
+    prices
+  )
+  assert.equal(sinCajaParaRespaldo, null)
 })

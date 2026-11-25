@@ -26,6 +26,8 @@ export default function ConfigClient({ profile, userEmail }: { profile: any; use
     regimen: drogueria?.regimen || '',
     telefono: drogueria?.telefono || '',
     direccion: drogueria?.direccion || '',
+    prefijo_factura: drogueria?.prefijo_factura || '',
+    resolucion_dian: drogueria?.resolucion_dian || '',
     mensaje_pie_factura: drogueria?.mensaje_pie_factura || '',
   })
 
@@ -217,6 +219,36 @@ export default function ConfigClient({ profile, userEmail }: { profile: any; use
                     value={fiscalForm.direccion}
                     onChange={(e) => setFiscalForm({ ...fiscalForm, direccion: e.target.value })}
                     placeholder="Calle 123 # 45-67"
+                    className="h-11 rounded-xl bg-slate-50 border-slate-200 font-medium px-4"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-black text-slate-500 uppercase tracking-widest">
+                    Prefijo de Factura / Recibo (Opcional)
+                  </Label>
+                  <Input
+                    value={fiscalForm.prefijo_factura}
+                    onChange={(e) =>
+                      setFiscalForm({
+                        ...fiscalForm,
+                        prefijo_factura: e.target.value.toUpperCase(),
+                      })
+                    }
+                    placeholder="Ej. POS, FAC o dejar vacío"
+                    maxLength={12}
+                    className="h-11 rounded-xl bg-slate-50 border-slate-200 font-medium px-4 uppercase"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-black text-slate-500 uppercase tracking-widest">
+                    Resolución DIAN / Nota Fiscal (Opcional)
+                  </Label>
+                  <Input
+                    value={fiscalForm.resolucion_dian}
+                    onChange={(e) =>
+                      setFiscalForm({ ...fiscalForm, resolucion_dian: e.target.value })
+                    }
+                    placeholder="Opcional: déjalo vacío si solo usas recibo POS interno"
                     className="h-11 rounded-xl bg-slate-50 border-slate-200 font-medium px-4"
                   />
                 </div>

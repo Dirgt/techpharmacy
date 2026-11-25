@@ -21,6 +21,7 @@ export default async function FacturacionPage() {
       cajaAbierta={cajaAbierta}
       carteraInitial={cartera}
       userRole={session?.profile?.role || 'vendedor'}
+      prefijoFactura={session?.profile?.drogueria?.prefijo_factura || null}
     />
   )
 }

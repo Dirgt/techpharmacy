@@ -123,6 +123,8 @@ export async function updateOwnDrogueriaFiscal(input: {
   telefono?: string | null
   direccion?: string | null
   mensaje_pie_factura?: string | null
+  prefijo_factura?: string | null
+  resolucion_dian?: string | null
 }) {
   const supabase = await createClient()
   const { error } = await supabase.rpc('actualizar_datos_fiscales_sede', {
@@ -131,6 +133,8 @@ export async function updateOwnDrogueriaFiscal(input: {
     p_telefono: input.telefono?.trim() || '',
     p_direccion: input.direccion?.trim() || '',
     p_mensaje_pie: input.mensaje_pie_factura?.trim() || '',
+    p_prefijo_factura: input.prefijo_factura?.trim() || '',
+    p_resolucion_dian: input.resolucion_dian?.trim() || '',
   })
 
   if (error) {

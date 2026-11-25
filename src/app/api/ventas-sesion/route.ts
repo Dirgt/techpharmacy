@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ success: false, data: [], error: 'cajaId es requerido' }, { status: 400 })
   }
 
-  const [{ data, error }, { data: gastos }, { data: comprasEfectivo }] = await Promise.all([
+  const [{ data, error }, { data: gastos }, { data: comprasEfectivo }, { data: abonosEfectivo }] = await Promise.all([
     supabase
       .from('facturas')
       .select(`
@@ -45,11 +45,16 @@ export async function GET(request: Request) {
       .select('id, numero_factura, total, created_at')
       .eq('caja_sesion_id', cajaId)
       .eq('estado_pago', 'pagado')
+      .eq('metodo_pago', 'efectivo'),
+    supabase
+      .from('factura_abonos')
+      .select('id, factura_id, monto, metodo_pago, created_at')
+      .eq('caja_sesion_id', cajaId)
       .eq('metodo_pago', 'efectivo')
   ])
 
   if (error) {
-    return NextResponse.json({ success: false, data: [], gastos: [], comprasEfectivo: [], error: error.message }, { status: 500 })
+    return NextResponse.json({ success: false, data: [], gastos: [], comprasEfectivo: [], abonosEfectivo: [], error: error.message }, { status: 500 })
   }
 
   return NextResponse.json(
@@ -57,7 +62,8 @@ export async function GET(request: Request) {
       success: true,
       data: data || [],
       gastos: gastos || [],
-      comprasEfectivo: comprasEfectivo || []
+      comprasEfectivo: comprasEfectivo || [],
+      abonosEfectivo: abonosEfectivo || []
     },
     { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
   )

@@ -250,7 +250,9 @@ export type Database = {
           compra_id: string | null
           costo_unitario: number
           drogueria_id: string
+          fecha_vencimiento: string | null
           id: string
+          lote: string | null
           producto_id: string | null
           subtotal: number
         }
@@ -259,7 +261,9 @@ export type Database = {
           compra_id?: string | null
           costo_unitario?: number
           drogueria_id?: string
+          fecha_vencimiento?: string | null
           id?: string
+          lote?: string | null
           producto_id?: string | null
           subtotal?: number
         }
@@ -268,7 +272,9 @@ export type Database = {
           compra_id?: string | null
           costo_unitario?: number
           drogueria_id?: string
+          fecha_vencimiento?: string | null
           id?: string
+          lote?: string | null
           producto_id?: string | null
           subtotal?: number
         }
@@ -309,10 +315,12 @@ export type Database = {
           created_at: string | null
           drogueria_id: string
           estado_pago: string
+          estado_recepcion: string | null
           fecha_emision: string
           id: string
           metodo_pago: string | null
           numero_factura: string
+          observaciones_recepcion: string | null
           proveedor_id: string | null
           total: number
         }
@@ -321,10 +329,12 @@ export type Database = {
           created_at?: string | null
           drogueria_id?: string
           estado_pago?: string
+          estado_recepcion?: string | null
           fecha_emision?: string
           id?: string
           metodo_pago?: string | null
           numero_factura: string
+          observaciones_recepcion?: string | null
           proveedor_id?: string | null
           total?: number
         }
@@ -333,10 +343,12 @@ export type Database = {
           created_at?: string | null
           drogueria_id?: string
           estado_pago?: string
+          estado_recepcion?: string | null
           fecha_emision?: string
           id?: string
           metodo_pago?: string | null
           numero_factura?: string
+          observaciones_recepcion?: string | null
           proveedor_id?: string | null
           total?: number
         }
@@ -422,9 +434,12 @@ export type Database = {
           nit: string | null
           nombre: string
           plan: string
+          prefijo_factura: string | null
           regimen: string | null
+          resolucion_dian: string | null
           subdominio: string
           telefono: string | null
+          ultimo_consecutivo_factura: number
           url_personalizada: string | null
         }
         Insert: {
@@ -439,9 +454,12 @@ export type Database = {
           nit?: string | null
           nombre: string
           plan?: string
+          prefijo_factura?: string | null
           regimen?: string | null
+          resolucion_dian?: string | null
           subdominio: string
           telefono?: string | null
+          ultimo_consecutivo_factura?: number
           url_personalizada?: string | null
         }
         Update: {
@@ -456,9 +474,12 @@ export type Database = {
           nit?: string | null
           nombre?: string
           plan?: string
+          prefijo_factura?: string | null
           regimen?: string | null
+          resolucion_dian?: string | null
           subdominio?: string
           telefono?: string | null
+          ultimo_consecutivo_factura?: number
           url_personalizada?: string | null
         }
         Relationships: []
@@ -619,6 +640,9 @@ export type Database = {
           motivo_anulacion: string | null
           numero: number
           orden_compra: string | null
+          pago_efectivo: number
+          pago_tarjeta: number
+          pago_transferencia: number
           subtotal_bruto: number | null
           tipo_venta: string | null
           total: number | null
@@ -645,6 +669,9 @@ export type Database = {
           motivo_anulacion?: string | null
           numero?: number
           orden_compra?: string | null
+          pago_efectivo?: number
+          pago_tarjeta?: number
+          pago_transferencia?: number
           subtotal_bruto?: number | null
           tipo_venta?: string | null
           total?: number | null
@@ -671,6 +698,9 @@ export type Database = {
           motivo_anulacion?: string | null
           numero?: number
           orden_compra?: string | null
+          pago_efectivo?: number
+          pago_tarjeta?: number
+          pago_transferencia?: number
           subtotal_bruto?: number | null
           tipo_venta?: string | null
           total?: number | null
@@ -852,6 +882,87 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      inventario_lotes: {
+        Row: {
+          blisters: number
+          cajas: number
+          costo_caja: number | null
+          created_at: string
+          drogueria_id: string
+          fecha_vencimiento: string | null
+          id: string
+          inventario_id: string
+          lote: string
+          producto_id: string
+          unidades: number
+          updated_at: string
+        }
+        Insert: {
+          blisters?: number
+          cajas?: number
+          costo_caja?: number | null
+          created_at?: string
+          drogueria_id?: string
+          fecha_vencimiento?: string | null
+          id?: string
+          inventario_id: string
+          lote?: string
+          producto_id: string
+          unidades?: number
+          updated_at?: string
+        }
+        Update: {
+          blisters?: number
+          cajas?: number
+          costo_caja?: number | null
+          created_at?: string
+          drogueria_id?: string
+          fecha_vencimiento?: string | null
+          id?: string
+          inventario_id?: string
+          lote?: string
+          producto_id?: string
+          unidades?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventario_lotes_drogueria_id_fkey"
+            columns: ["drogueria_id"]
+            isOneToOne: false
+            referencedRelation: "droguerias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventario_lotes_inventario_id_fkey"
+            columns: ["inventario_id"]
+            isOneToOne: false
+            referencedRelation: "inventario"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventario_lotes_inventario_id_fkey"
+            columns: ["inventario_id"]
+            isOneToOne: false
+            referencedRelation: "vista_inventario_completo"
+            referencedColumns: ["inventario_id"]
+          },
+          {
+            foreignKeyName: "inventario_lotes_producto_id_fkey"
+            columns: ["producto_id"]
+            isOneToOne: false
+            referencedRelation: "productos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventario_lotes_producto_id_fkey"
+            columns: ["producto_id"]
+            isOneToOne: false
+            referencedRelation: "vista_inventario_completo"
+            referencedColumns: ["producto_id"]
           },
         ]
       }
@@ -1133,7 +1244,9 @@ export type Database = {
           p_direccion?: string
           p_mensaje_pie?: string
           p_nit?: string
+          p_prefijo_factura?: string
           p_regimen?: string
+          p_resolucion_dian?: string
           p_telefono?: string
         }
         Returns: Json
@@ -1157,9 +1270,16 @@ export type Database = {
           p_iva_porcentaje: number
           p_metodo_pago: string
           p_orden_compra: string
+          p_pago_efectivo?: number
+          p_pago_tarjeta?: number
+          p_pago_transferencia?: number
           p_tipo_venta: string
           p_vendedor_id: string
         }
+        Returns: Json
+      }
+      dar_baja_lote_tx: {
+        Args: { p_lote_id: string; p_motivo?: string }
         Returns: Json
       }
       get_current_drogueria_id: { Args: never; Returns: string }
@@ -1197,8 +1317,10 @@ export type Database = {
           p_caja_sesion_id: string
           p_detalles: Database["public"]["CompositeTypes"]["compra_detalle_input"][]
           p_estado_pago: string
+          p_estado_recepcion?: string
           p_metodo_pago: string
           p_numero_factura: string
+          p_observaciones_recepcion?: string
           p_proveedor_id: string
           p_total: number
           p_user_id: string
@@ -1214,6 +1336,10 @@ export type Database = {
           p_tipo: string
         }
         Returns: Json
+      }
+      sync_inventario_from_lotes: {
+        Args: { p_inventario_id: string }
+        Returns: undefined
       }
       upsert_inventario_tx: {
         Args: {
@@ -1252,6 +1378,8 @@ export type Database = {
         producto_id: string | null
         cantidad: number | null
         costo_unitario: number | null
+        lote: string | null
+        fecha_vencimiento: string | null
       }
       factura_item_input: {
         producto_id: string | null
