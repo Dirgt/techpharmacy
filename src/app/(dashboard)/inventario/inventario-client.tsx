@@ -8,16 +8,24 @@ import { useRouter } from 'next/navigation'
 import {
   Plus, Search, Package, Edit3, Info, Check,
   AlertCircle, Activity, History, TrendingUp, FileText,
-  ArrowDownCircle, Gem, MousePointer2, Calculator
+  ArrowDownCircle, Gem, MousePointer2, Calculator, Upload, Download
 } from 'lucide-react'
 import { format, isAfter, isBefore, addDays, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale/es'
 import { toast } from 'sonner'
-import { upsertInventario, createLaboratorio, getAuditoria } from '@/app/actions/inventario'
+import { upsertInventario, createLaboratorio, getAuditoria, importarInventarioMasivo } from '@/app/actions/inventario'
+import {
+  CsvInventarioRow,
+  CsvParseError,
+  generateInventarioCsvTemplate,
+  parseInventarioCsv,
+} from '@/lib/inventario/csv-import'
 import { Database } from '@/lib/supabase/database.types'
 import { calculatePV, formatCurrency } from '@/lib/utils'
 
-type InventarioRow = Database['public']['Views']['vista_inventario_completo']['Row']
+type InventarioRow = Database['public']['Views']['vista_inventario_completo']['Row'] & {
+  requiere_formula?: boolean
+}
 type LaboratorioRow = Database['public']['Tables']['laboratorios']['Row']
 
 interface InventarioClientProps {
@@ -163,6 +171,12 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
   const [showHistory, setShowHistory] = useState(false)
   const [historyProduct, setHistoryProduct] = useState<any>(null)
 
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+  const [importRows, setImportRows] = useState<CsvInventarioRow[]>([])
+  const [importErrors, setImportErrors] = useState<CsvParseError[]>([])
+  const [importFileName, setImportFileName] = useState('')
+  const [importingCsv, setImportingCsv] = useState(false)
+
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 8
 
@@ -185,7 +199,8 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
     registro_invima: '',
     seccion: '',
     ubicacion: '',
-    stock_minimo: 2
+    stock_minimo: 2,
+    requiere_formula: false,
   })
 
 
@@ -284,6 +299,59 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
   // calculatePV movido arriba
 
   // --- EXPORTACIÓN ROBUSTA (COMPATIBILIDAD EXCEL TOTAL) ---
+  const handleDownloadTemplate = () => {
+    const csv = generateInventarioCsvTemplate()
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', 'plantilla_inventario_techpharmacy.csv')
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    toast.success('Plantilla CSV descargada')
+  }
+
+  const handleCsvFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImportFileName(file.name)
+    const text = await file.text()
+    const parsed = parseInventarioCsv(text)
+    setImportRows(parsed.rows)
+    setImportErrors(parsed.errors)
+  }
+
+  const handleConfirmImport = async () => {
+    if (importRows.length === 0) return
+    setImportingCsv(true)
+    try {
+      const res = await importarInventarioMasivo(importRows)
+      if (res.success) {
+        toast.success(
+          `Importación completada: ${res.importados} productos cargados${
+            res.fallidos > 0 ? ` (${res.fallidos} con error)` : ''
+          }`
+        )
+        if (res.errores.length > 0) {
+          toast.error(res.errores.slice(0, 3).join(' | '))
+        }
+        setIsImportModalOpen(false)
+        setImportRows([])
+        setImportErrors([])
+        setImportFileName('')
+        router.refresh()
+      } else {
+        toast.error(res.errores[0] || 'No se pudieron importar los productos')
+      }
+    } catch {
+      toast.error('Error de conexión al importar CSV')
+    } finally {
+      setImportingCsv(false)
+    }
+  }
+
   const handleExport = () => {
     const headers = ['CODIGO', 'PRODUCTO', 'LABORATORIO', 'SECCION', 'UBICACION', 'LOTE', 'INVIMA', 'VENCIMIENTO', 'STOCK_CAJAS', 'VALOR_COMPRA_TOTAL', 'VALOR_VENTA_ESTIMADO', 'MARGEN_%']
 
@@ -348,7 +416,8 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       registro_invima: item.registro_invima || '',
       seccion: item.seccion || '',
       ubicacion: item.ubicacion || '',
-      stock_minimo: item.stock_minimo || 2
+      stock_minimo: item.stock_minimo || 2,
+      requiere_formula: Boolean(item.requiere_formula),
     })
     setEsProductoUnico(false)
     toast.success('Producto cargado con éxito')
@@ -496,6 +565,17 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
           />
         </div>
         <div className="flex flex-col sm:flex-row gap-3 lg:gap-4 w-full xl:w-auto">
+          <button
+            onClick={() => {
+              setImportRows([])
+              setImportErrors([])
+              setImportFileName('')
+              setIsImportModalOpen(true)
+            }}
+            className="w-full sm:w-auto justify-center px-6 py-4 lg:py-6 bg-emerald-50 border-2 border-emerald-200 rounded-[2rem] lg:rounded-[2.5rem] text-[10px] lg:text-xs font-black text-emerald-700 flex items-center gap-2 hover:bg-emerald-100 transition-all active:scale-95 shadow-sm whitespace-nowrap"
+          >
+            <Upload className="w-4 h-4 lg:w-5 lg:h-5" /> IMPORTAR CSV / EXCEL
+          </button>
           <button onClick={handleExport} className="w-full sm:w-auto justify-center px-6 lg:px-10 py-4 lg:py-6 bg-white border-2 border-slate-100 rounded-[2rem] lg:rounded-[2.5rem] text-[10px] lg:text-xs font-black text-slate-600 flex items-center gap-2 lg:gap-3 hover:border-indigo-600 hover:text-indigo-600 transition-all active:scale-95 shadow-sm">
             <FileText className="w-4 h-4 lg:w-5 lg:h-5" /> AUDITORÍA EXCEL
           </button>
@@ -508,7 +588,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                 blisters_por_caja: 1, unidades_por_blister: 1,
                 precio_caja: 0, precio_blister: 0, precio_unidad: 0,
                 porcentaje_ganancia: 20, margen_blister: 20, margen_unidad: 30,
-                lote: '', registro_invima: '', seccion: '', ubicacion: '', stock_minimo: 2
+                lote: '', registro_invima: '', seccion: '', ubicacion: '', stock_minimo: 2, requiere_formula: false
               })
               setEsProductoUnico(false)
               setIsModalOpen(true)
@@ -554,6 +634,9 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                           <div className="flex items-center gap-2">
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-black text-slate-900 uppercase truncate max-w-[200px] leading-tight group-hover:text-indigo-600" title={item.nombre_producto || undefined}>{item.nombre_producto}</span>
+                              {item.requiere_formula && (
+                                <span className="text-[9px] font-black text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 uppercase">Rx</span>
+                              )}
                               <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">{item.codigo}</span>
                             </div>
                           </div>
@@ -719,6 +802,24 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                       onChange={(e) => handleInputChange('principio_activo', e.target.value)}
                     />
                     <p className="text-[10px] font-medium text-slate-500 italic mt-1">Corresponde a la molécula principal (ej. Acetaminofén) para diferenciar del nombre de marca (Dolex).</p>
+                  </div>
+                  <div className="col-span-1 md:col-span-3 pt-1">
+                    <label className="inline-flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(formData.requiere_formula)}
+                        onChange={(e) => handleInputChange('requiere_formula', e.target.checked)}
+                        className="w-4 h-4 accent-rose-600"
+                      />
+                      <div>
+                        <span className="text-xs font-black text-slate-800 uppercase block">
+                          Requiere Fórmula Médica / Medicamento Controlado (Rx)
+                        </span>
+                        <span className="text-[10px] font-medium text-slate-500">
+                          Mostrará alerta preventiva al vendedor en el punto de venta antes de facturar.
+                        </span>
+                      </div>
+                    </label>
                   </div>
                 </div>
 
@@ -910,7 +1011,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       {/* Historial Auditoría */}
       {showHistory && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 md:p-6 animate-in fade-in">
-          <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl p-6 md:p-10 space-y-8 animate-in zoom-in-95 border border-slate-100">
+          <div className="bg-white w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-3xl shadow-2xl p-5 md:p-8 space-y-6 animate-in zoom-in-95 border border-slate-100">
             <div className="flex justify-between items-start border-b border-slate-100 pb-6">
               <div className="flex items-center gap-5">
                 <div className="p-4 bg-indigo-50 text-indigo-600 rounded-2xl border border-indigo-100">
@@ -948,6 +1049,142 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
             <div className="pt-4 border-t border-slate-100">
               <button onClick={() => setShowHistory(false)} className="w-full bg-slate-800 hover:bg-slate-900 text-white p-4 rounded-xl text-sm font-bold shadow-md transition-colors flex items-center justify-center gap-2">
                 Cerrar Bitácora
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL IMPORTACIÓN MASIVA CSV / EXCEL */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-2xl p-6 md:p-8 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
+              <div>
+                <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <Upload className="w-5 h-5 text-emerald-600" />
+                  Importación Masiva de Inventario
+                </h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  Carga o actualiza hasta 500 productos desde Excel guardado como CSV (UTF-8 o punto y coma).
+                </p>
+              </div>
+              <button
+                onClick={() => setIsImportModalOpen(false)}
+                className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-500"
+              >
+                <Plus className="w-5 h-5 rotate-45" />
+              </button>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl bg-slate-50 border border-slate-200 p-4">
+              <div className="text-xs text-slate-600 space-y-0.5">
+                <p className="font-bold text-slate-800">Paso 1: Usa nuestra plantilla</p>
+                <p>Incluye columnas listas para abrir en Excel con código, nombre, laboratorio, stock y precios.</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleDownloadTemplate}
+                className="px-4 py-2.5 bg-white border border-slate-200 hover:border-indigo-500 hover:text-indigo-600 rounded-xl text-xs font-black inline-flex items-center gap-2 shrink-0 shadow-sm"
+              >
+                <Download className="w-4 h-4" />
+                Descargar Plantilla CSV
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-700 block">
+                Paso 2: Selecciona tu archivo `.csv`
+              </label>
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleCsvFileChange}
+                className="block w-full text-xs text-slate-600 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 border border-dashed border-slate-300 rounded-2xl p-3 cursor-pointer"
+              />
+              {importFileName && (
+                <p className="text-xs font-semibold text-slate-500">
+                  Archivo cargado: <span className="text-slate-800">{importFileName}</span>
+                </p>
+              )}
+            </div>
+
+            {(importRows.length > 0 || importErrors.length > 0) && (
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-2 text-xs font-black">
+                  <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700">
+                    {importRows.length} productos válidos
+                  </span>
+                  {importErrors.length > 0 && (
+                    <span className="px-3 py-1 rounded-full bg-rose-100 text-rose-700">
+                      {importErrors.length} filas con error
+                    </span>
+                  )}
+                </div>
+
+                {importErrors.length > 0 && (
+                  <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-xs text-rose-700 space-y-1 max-h-28 overflow-y-auto">
+                    {importErrors.slice(0, 8).map((err, idx) => (
+                      <p key={idx}>
+                        <strong>Línea {err.line}:</strong> {err.message}
+                      </p>
+                    ))}
+                  </div>
+                )}
+
+                {importRows.length > 0 && (
+                  <div className="rounded-2xl border border-slate-200 overflow-x-auto">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-50 text-[10px] font-black uppercase text-slate-400">
+                        <tr>
+                          <th className="px-3 py-2">Código</th>
+                          <th className="px-3 py-2">Producto</th>
+                          <th className="px-3 py-2">Lab</th>
+                          <th className="px-3 py-2">Stock (C/B/U)</th>
+                          <th className="px-3 py-2">Costo Caja</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {importRows.slice(0, 5).map((r, idx) => (
+                          <tr key={idx}>
+                            <td className="px-3 py-2 font-mono">{r.codigo}</td>
+                            <td className="px-3 py-2 font-bold text-slate-800">{r.nombre}</td>
+                            <td className="px-3 py-2 text-slate-500">{r.laboratorio || '-'}</td>
+                            <td className="px-3 py-2">
+                              {r.cajas}/{r.blisters}/{r.unidades}
+                            </td>
+                            <td className="px-3 py-2 font-bold">${r.precio_caja.toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {importRows.length > 5 && (
+                      <p className="px-3 py-1.5 text-[11px] font-semibold text-slate-400 bg-slate-50 border-t border-slate-100">
+                        ... y {importRows.length - 5} productos adicionales listos para importar.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsImportModalOpen(false)}
+                className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={importingCsv || importRows.length === 0}
+                onClick={handleConfirmImport}
+                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black disabled:opacity-50"
+              >
+                {importingCsv
+                  ? 'Importando productos...'
+                  : `Importar ${importRows.length} Productos`}
               </button>
             </div>
           </div>

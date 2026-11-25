@@ -11,12 +11,27 @@ import {
 import {
   DrogueriaSchema,
   CreateTenantUserSchema,
+  CreateApiKeySchema,
 } from '../src/lib/validations/superadmin.schema.ts'
 import {
   extractSubdomainFromHost,
   buildDrogueriaUrl,
   isTenantSuspended,
 } from '../src/lib/tenant/domain.ts'
+import {
+  generateApiKeyPair,
+  hashApiKey,
+  checkRateLimit,
+} from '../src/lib/api/api-key-utils.ts'
+import {
+  generateInventarioCsvTemplate,
+  parseInventarioCsv,
+} from '../src/lib/inventario/csv-import.ts'
+import {
+  checkLoginRateLimit,
+  recordFailedLoginAttempt,
+  clearLoginAttempts,
+} from '../src/lib/auth/login-rate-limit.ts'
 
 test('calculatePV calcula el precio de venta según margen sobre venta', () => {
   assert.equal(calculatePV(10000, 20), 12500)
@@ -280,4 +295,90 @@ test('DrogueriaSchema valida campos de plan, estado, max_usuarios y fecha_vencim
     fecha_vencimiento: '31/12/2026',
   })
   assert.equal(invalid.success, false)
+})
+
+test('generateApiKeyPair y hashApiKey generan llaves tp_live_ y hash SHA-256 consistente', () => {
+  const pair1 = generateApiKeyPair()
+  const pair2 = generateApiKeyPair()
+
+  assert.ok(pair1.rawKey.startsWith('tp_live_'))
+  assert.equal(pair1.keyPrefix, pair1.rawKey.slice(0, 14))
+  assert.equal(pair1.keyHash, hashApiKey(pair1.rawKey))
+  assert.equal(pair1.keyHash.length, 64)
+  assert.notEqual(pair1.rawKey, pair2.rawKey)
+})
+
+test('checkRateLimit controla cuota por minuto y reinicia al cambiar de ventana', () => {
+  const bucket = `test-bucket-${Date.now()}`
+  const r1 = checkRateLimit(bucket, 2, 1_000)
+  const r2 = checkRateLimit(bucket, 2, 2_000)
+  const r3 = checkRateLimit(bucket, 2, 3_000)
+  const r4 = checkRateLimit(bucket, 2, 62_000)
+
+  assert.equal(r1.allowed, true)
+  assert.equal(r1.remaining, 1)
+  assert.equal(r2.allowed, true)
+  assert.equal(r2.remaining, 0)
+  assert.equal(r3.allowed, false)
+  assert.equal(r4.allowed, true)
+})
+
+test('CreateApiKeySchema valida drogueria_id, nombre, scopes y expires_at', () => {
+  const validUuid = 'dc01561b-ed2d-46c3-b97a-1b5529464e8f'
+  assert.equal(
+    CreateApiKeySchema.safeParse({
+      drogueria_id: validUuid,
+      nombre: 'Integración Siigo',
+      scopes: ['read:productos', 'read:facturas'],
+      expires_at: '2027-01-01',
+    }).success,
+    true
+  )
+
+  assert.equal(
+    CreateApiKeySchema.safeParse({
+      drogueria_id: validUuid,
+      nombre: 'Sin scopes',
+      scopes: [],
+    }).success,
+    false
+  )
+})
+
+test('generateInventarioCsvTemplate y parseInventarioCsv procesan plantilla Excel con punto y coma y comas', () => {
+  const template = generateInventarioCsvTemplate()
+  const parsedTemplate = parseInventarioCsv(template)
+  assert.equal(parsedTemplate.errors.length, 0)
+  assert.equal(parsedTemplate.rows.length, 2)
+  assert.equal(parsedTemplate.rows[0].codigo, '7702057070112')
+  assert.equal(parsedTemplate.rows[0].laboratorio, 'GENFAR')
+  assert.equal(parsedTemplate.rows[0].requiere_formula, false)
+  assert.equal(parsedTemplate.rows[1].requiere_formula, true)
+
+  const commaCsv = [
+    'codigo,nombre,cajas,precio_caja,fecha_vencimiento,requiere_formula',
+    '111222,Amoxicilina 500mg,12,25000,31/12/2027,si',
+    ',Sin Codigo,5,1000,2027-01-01,no',
+  ].join('\n')
+  const parsedComma = parseInventarioCsv(commaCsv)
+  assert.equal(parsedComma.rows.length, 1)
+  assert.equal(parsedComma.rows[0].fecha_vencimiento, '2027-12-31')
+  assert.equal(parsedComma.rows[0].requiere_formula, true)
+  assert.equal(parsedComma.errors.length, 1)
+  assert.equal(parsedComma.errors[0].line, 3)
+})
+
+test('checkLoginRateLimit bloquea tras maxAttempts intentos fallidos y limpia al acertar', () => {
+  const key = `login-test-${Date.now()}@correo.com:127.0.0.1`
+  assert.equal(checkLoginRateLimit(key, 3, 1_000).allowed, true)
+  recordFailedLoginAttempt(key, 60_000, 1_100)
+  recordFailedLoginAttempt(key, 60_000, 1_200)
+  recordFailedLoginAttempt(key, 60_000, 1_300)
+
+  const blocked = checkLoginRateLimit(key, 3, 1_400)
+  assert.equal(blocked.allowed, false)
+  assert.equal(blocked.remaining, 0)
+
+  clearLoginAttempts(key)
+  assert.equal(checkLoginRateLimit(key, 3, 1_500).allowed, true)
 })

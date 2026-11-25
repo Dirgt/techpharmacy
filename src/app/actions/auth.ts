@@ -2,16 +2,38 @@
 
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { isTenantSuspended } from '@/lib/tenant/domain'
 import { resolveTenantWithSupabase } from '@/lib/tenant/resolve'
+import {
+  checkLoginRateLimit,
+  clearLoginAttempts,
+  recordFailedLoginAttempt,
+} from '@/lib/auth/login-rate-limit'
 
 export async function login(formData: FormData) {
-  const email = formData.get('email') as string
-  const password = formData.get('password') as string
+  const email = (formData.get('email') as string | null)?.trim() || ''
+  const password = (formData.get('password') as string | null) || ''
 
   if (!email || !password) {
     return { error: 'El correo y la contraseña son obligatorios' }
+  }
+
+  const headersList = await headers()
+  const rawHost = headersList.get('x-forwarded-host') || headersList.get('host')
+  const ip =
+    headersList.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    headersList.get('x-real-ip') ||
+    'local'
+  const rateLimitKey = `${email.toLowerCase()}:${ip}`
+
+  const limitCheck = checkLoginRateLimit(rateLimitKey)
+  if (!limitCheck.allowed) {
+    const minutos = Math.max(1, Math.ceil(limitCheck.retryAfterSeconds / 60))
+    return {
+      error: `Demasiados intentos fallidos. Espera ${minutos} minuto(s) antes de intentar nuevamente.`,
+    }
   }
 
   const supabase = await createClient()
@@ -22,8 +44,11 @@ export async function login(formData: FormData) {
   })
 
   if (error || !data.user) {
+    recordFailedLoginAttempt(rateLimitKey)
     return { error: 'Credenciales inválidas o cuenta inactiva' }
   }
+
+  clearLoginAttempts(rateLimitKey)
 
   const { data: profile } = await supabase
     .from('profiles')
@@ -42,8 +67,6 @@ export async function login(formData: FormData) {
     redirect('/droguerias')
   }
 
-  const headersList = await headers()
-  const rawHost = headersList.get('x-forwarded-host') || headersList.get('host')
   const hostTenant = await resolveTenantWithSupabase(supabase, rawHost)
 
   if (hostTenant && hostTenant.id !== profile.drogueria_id) {
@@ -91,5 +114,31 @@ export async function changeOwnPassword(password: string) {
     return { error: error.message }
   }
 
+  return { success: true }
+}
+
+export async function updateOwnDrogueriaFiscal(input: {
+  nit?: string | null
+  regimen?: string | null
+  telefono?: string | null
+  direccion?: string | null
+  mensaje_pie_factura?: string | null
+}) {
+  const supabase = await createClient()
+  const { error } = await supabase.rpc('actualizar_datos_fiscales_sede', {
+    p_nit: input.nit?.trim() || '',
+    p_regimen: input.regimen?.trim() || '',
+    p_telefono: input.telefono?.trim() || '',
+    p_direccion: input.direccion?.trim() || '',
+    p_mensaje_pie: input.mensaje_pie_factura?.trim() || '',
+  })
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  revalidatePath('/configuracion')
+  revalidatePath('/facturas')
+  revalidatePath('/', 'layout')
   return { success: true }
 }

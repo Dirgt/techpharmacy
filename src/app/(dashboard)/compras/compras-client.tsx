@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Database } from '@/lib/supabase/database.types'
 import { Button } from '@/components/ui/button'
@@ -8,8 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { useBarcodeScanner } from '@/hooks/use-barcode-scanner'
-import { Plus, Search, FileText, PlusCircle, Trash2, ShoppingCart, AlertCircle } from 'lucide-react'
-import { registrarCompra } from '@/app/actions/tesoreria'
+import { Plus, Search, FileText, PlusCircle, Trash2, ShoppingCart, AlertCircle, CheckCircle2, Wallet } from 'lucide-react'
+import { pagarCompraProveedor, registrarCompra } from '@/app/actions/tesoreria'
 import { formatCurrency } from '@/lib/utils'
 import {
   Dialog,
@@ -64,11 +64,37 @@ export default function ComprasClient({
   const [estadoPago, setEstadoPago] = useState<'pagado' | 'pendiente' | 'credito'>('pendiente')
   const [metodoPago, setMetodoPago] = useState<'efectivo' | 'transferencia' | 'tarjeta'>('efectivo')
   const [detalles, setDetalles] = useState<{producto_id: string, cantidad: number, costo_unitario: number}[]>([])
+  const [filtroEstado, setFiltroEstado] = useState<'todas' | 'por_pagar' | 'pagadas'>('todas')
+  const [payingCompra, setPayingCompra] = useState<Compra | null>(null)
+  const [pagoMetodo, setPagoMetodo] = useState<'transferencia' | 'efectivo' | 'tarjeta'>('transferencia')
+  const [isPayingCompra, setIsPayingCompra] = useState(false)
 
-  const filteredData = initialData.filter(c => 
-    (c.numero_factura || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (c.proveedores?.nombre || '').toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const resumenCompras = useMemo(() => {
+    let totalGeneral = 0
+    let totalPorPagar = 0
+    let totalPagado = 0
+    let countPorPagar = 0
+    for (const c of initialData) {
+      const val = Number(c.total || 0)
+      totalGeneral += val
+      if (c.estado_pago === 'pagado') {
+        totalPagado += val
+      } else {
+        totalPorPagar += val
+        countPorPagar += 1
+      }
+    }
+    return { totalGeneral, totalPorPagar, totalPagado, countPorPagar }
+  }, [initialData])
+
+  const filteredData = initialData.filter((c) => {
+    if (filtroEstado === 'por_pagar' && c.estado_pago === 'pagado') return false
+    if (filtroEstado === 'pagadas' && c.estado_pago !== 'pagado') return false
+    return (
+      (c.numero_factura || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (c.proveedores?.nombre || '').toLowerCase().includes(searchTerm.toLowerCase())
+    )
+  })
 
   useBarcodeScanner((barcode) => {
     if (!isModalOpen) return
@@ -339,6 +365,23 @@ export default function ComprasClient({
         </Dialog>
       </div>
 
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+        <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+          <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Total Compras</p>
+          <p className="text-2xl font-black text-slate-900 mt-1">{formatCurrency(resumenCompras.totalGeneral)}</p>
+        </div>
+        <div className="bg-amber-50/70 rounded-2xl border border-amber-200 p-5 shadow-sm">
+          <p className="text-[11px] font-black uppercase tracking-wider text-amber-700">
+            Cuentas por Pagar ({resumenCompras.countPorPagar})
+          </p>
+          <p className="text-2xl font-black text-amber-800 mt-1">{formatCurrency(resumenCompras.totalPorPagar)}</p>
+        </div>
+        <div className="bg-emerald-50/70 rounded-2xl border border-emerald-200 p-5 shadow-sm">
+          <p className="text-[11px] font-black uppercase tracking-wider text-emerald-700">Total Pagado</p>
+          <p className="text-2xl font-black text-emerald-800 mt-1">{formatCurrency(resumenCompras.totalPagado)}</p>
+        </div>
+      </div>
+
       <div className="relative bg-white p-4 lg:p-6 rounded-[2rem] lg:rounded-[3rem] border border-slate-100 shadow-xl flex flex-col xl:flex-row gap-4 lg:gap-6 items-center mb-6 mt-4">
         <div className="relative flex-1 group w-full">
           <Search className="absolute left-6 lg:left-8 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 w-5 h-5 lg:w-6 lg:h-6 transition-colors" />
@@ -349,6 +392,26 @@ export default function ComprasClient({
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
+        </div>
+        <div className="flex flex-wrap gap-2 shrink-0">
+          {[
+            { id: 'todas', label: 'Todas' },
+            { id: 'por_pagar', label: `Por Pagar (${resumenCompras.countPorPagar})` },
+            { id: 'pagadas', label: 'Pagadas' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setFiltroEstado(tab.id as 'todas' | 'por_pagar' | 'pagadas')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-black transition-colors ${
+                filtroEstado === tab.id
+                  ? 'bg-slate-900 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -409,14 +472,30 @@ export default function ComprasClient({
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-slate-500 hover:text-indigo-600"
-                        onClick={() => setSelectedCompra(compra)}
-                      >
-                        Ver Detalles
-                      </Button>
+                      <div className="inline-flex items-center gap-2">
+                        {compra.estado_pago !== 'pagado' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 font-bold"
+                            onClick={() => {
+                              setPayingCompra(compra)
+                              setPagoMetodo('transferencia')
+                            }}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                            Pagar
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-slate-500 hover:text-indigo-600"
+                          onClick={() => setSelectedCompra(compra)}
+                        >
+                          Ver Detalles
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -500,6 +579,89 @@ export default function ComprasClient({
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Pagar Cuenta por Pagar a Proveedor */}
+      <Dialog open={!!payingCompra} onOpenChange={(open) => { if (!open) setPayingCompra(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wallet className="w-5 h-5 text-emerald-600" />
+              Pagar Factura #{payingCompra?.numero_factura}
+            </DialogTitle>
+          </DialogHeader>
+          {payingCompra && (
+            <div className="space-y-4 mt-2">
+              <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 text-sm space-y-1">
+                <p>
+                  <span className="text-slate-500 font-bold">Proveedor:</span>{' '}
+                  <span className="font-black text-slate-900">
+                    {payingCompra.proveedores?.nombre || 'N/A'}
+                  </span>
+                </p>
+                <p>
+                  <span className="text-slate-500 font-bold">Monto a pagar:</span>{' '}
+                  <span className="font-black text-emerald-700 text-base">
+                    {formatCurrency(payingCompra.total)}
+                  </span>
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Método de Pago</Label>
+                <Select
+                  value={pagoMetodo}
+                  onValueChange={(v) =>
+                    setPagoMetodo(v as 'transferencia' | 'efectivo' | 'tarjeta')
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="transferencia">Transferencia Bancaria</SelectItem>
+                    <SelectItem value="tarjeta">Tarjeta</SelectItem>
+                    <SelectItem value="efectivo">Efectivo de Caja Abierta</SelectItem>
+                  </SelectContent>
+                </Select>
+                {pagoMetodo === 'efectivo' && !caja && (
+                  <p className="text-xs font-bold text-rose-600">
+                    Debes abrir un turno de caja para pagar en efectivo desde gaveta.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setPayingCompra(null)}>
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  disabled={isPayingCompra || (pagoMetodo === 'efectivo' && !caja)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  onClick={async () => {
+                    setIsPayingCompra(true)
+                    const res = await pagarCompraProveedor(
+                      payingCompra.id,
+                      pagoMetodo,
+                      pagoMetodo === 'efectivo' ? caja?.id : null
+                    )
+                    if (res.success) {
+                      toast.success(`Factura #${payingCompra.numero_factura} marcada como pagada`)
+                      setPayingCompra(null)
+                      router.refresh()
+                    } else {
+                      toast.error(res.error || 'Error al registrar pago')
+                    }
+                    setIsPayingCompra(false)
+                  }}
+                >
+                  {isPayingCompra ? 'Procesando...' : 'Confirmar Pago'}
+                </Button>
               </div>
             </div>
           )}

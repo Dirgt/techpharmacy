@@ -6,9 +6,12 @@ import { Database } from '@/lib/supabase/database.types'
 import { requireSuperAdmin } from '@/lib/auth/session'
 import { invalidateMiddlewareProfileCache } from '@/lib/supabase/middleware'
 import { invalidateTenantHostCache } from '@/lib/tenant/resolve'
+import { generateApiKeyPair } from '@/lib/api/api-key-utils'
 import {
   AssignUserInput,
   AssignUserSchema,
+  CreateApiKeyInput,
+  CreateApiKeySchema,
   CreateTenantUserInput,
   CreateTenantUserSchema,
   DrogueriaInput,
@@ -66,9 +69,23 @@ export interface PlatformUserOverview {
   last_sign_in_at: string | null
 }
 
+export interface PlatformApiKeyOverview {
+  id: string
+  drogueria_id: string
+  drogueria_nombre: string
+  nombre: string
+  key_prefix: string
+  scopes: string[]
+  estado: string
+  last_used_at: string | null
+  expires_at: string | null
+  created_at: string
+}
+
 export interface PlatformOverviewData {
   droguerias: DrogueriaOverview[]
   usuarios: PlatformUserOverview[]
+  apiKeys: PlatformApiKeyOverview[]
   resumenGlobal: {
     totalDroguerias: number
     totalUsuarios: number
@@ -114,6 +131,7 @@ export async function getPlatformOverview(): Promise<{
       { data: clientes },
       { data: compras },
       { data: cajas },
+      { data: apiKeysRows },
     ] = await Promise.all([
       adminClient.from('droguerias').select('*').order('created_at', { ascending: true }),
       adminClient
@@ -126,6 +144,10 @@ export async function getPlatformOverview(): Promise<{
       adminClient.from('clientes').select('id, drogueria_id'),
       adminClient.from('compras').select('id, drogueria_id'),
       adminClient.from('caja_sesiones').select('id, drogueria_id, estado'),
+      adminClient
+        .from('api_keys')
+        .select('id, drogueria_id, nombre, key_prefix, scopes, estado, last_used_at, expires_at, created_at')
+        .order('created_at', { ascending: false }),
     ])
 
     if (drogueriasErr) return { success: false, error: drogueriasErr.message }
@@ -227,11 +249,25 @@ export async function getPlatformOverview(): Promise<{
 
     const volumenTotal = drogueriasOverview.reduce((acc, d) => acc + d.volumenFacturado, 0)
 
+    const apiKeys: PlatformApiKeyOverview[] = (apiKeysRows || []).map((k) => ({
+      id: k.id,
+      drogueria_id: k.drogueria_id,
+      drogueria_nombre: drogueriaNameMap.get(k.drogueria_id) || 'Desconocida',
+      nombre: k.nombre,
+      key_prefix: k.key_prefix,
+      scopes: k.scopes || [],
+      estado: k.estado,
+      last_used_at: k.last_used_at ?? null,
+      expires_at: k.expires_at ?? null,
+      created_at: k.created_at,
+    }))
+
     return {
       success: true,
       data: {
         droguerias: drogueriasOverview,
         usuarios,
+        apiKeys,
         resumenGlobal: {
           totalDroguerias: drogueriasOverview.length,
           totalUsuarios: usuarios.length,
@@ -516,6 +552,74 @@ export async function assignUserDrogueriaAndRole(input: AssignUserInput) {
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Error al reasignar usuario',
+    }
+  }
+}
+
+export async function createApiKeyForDrogueria(input: CreateApiKeyInput): Promise<{
+  success: boolean
+  rawKey?: string
+  keyPrefix?: string
+  error?: string
+}> {
+  try {
+    const auth = await requireSuperAdmin()
+    if (!auth.ok) return { success: false, error: auth.error }
+
+    const parsed = CreateApiKeySchema.safeParse(input)
+    if (!parsed.success) {
+      return { success: false, error: parsed.error.issues.map((i) => i.message).join(', ') }
+    }
+
+    const v = parsed.data
+    const adminClient = getAdminClient()
+    const { rawKey, keyPrefix, keyHash } = generateApiKeyPair()
+
+    const { error } = await adminClient.from('api_keys').insert({
+      drogueria_id: v.drogueria_id,
+      nombre: v.nombre,
+      key_prefix: keyPrefix,
+      key_hash: keyHash,
+      scopes: v.scopes,
+      estado: 'activa',
+      created_by: auth.user.id,
+      expires_at: v.expires_at ? `${v.expires_at}T23:59:59.999Z` : null,
+    })
+
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath('/droguerias')
+    return { success: true, rawKey, keyPrefix }
+  } catch (error: unknown) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Error al generar API Key',
+    }
+  }
+}
+
+export async function revokeApiKey(apiKeyId: string): Promise<{
+  success: boolean
+  error?: string
+}> {
+  try {
+    const auth = await requireSuperAdmin()
+    if (!auth.ok) return { success: false, error: auth.error }
+
+    const adminClient = getAdminClient()
+    const { error } = await adminClient
+      .from('api_keys')
+      .update({ estado: 'revocada' })
+      .eq('id', apiKeyId)
+
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath('/droguerias')
+    return { success: true }
+  } catch (error: unknown) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Error al revocar API Key',
     }
   }
 }

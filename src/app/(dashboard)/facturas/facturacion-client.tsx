@@ -3,9 +3,9 @@
 'use client'
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
-import { Search, Plus, Minus, Trash2, ShoppingCart, Wallet, ReceiptText, CheckCircle2, BarChart2, FileDown, RefreshCw, ChevronDown, X, Building2, Lock } from 'lucide-react'
+import { Search, Plus, Minus, Trash2, ShoppingCart, Wallet, ReceiptText, CheckCircle2, BarChart2, FileDown, RefreshCw, ChevronDown, X, Building2, Lock, Ban, AlertTriangle, ArrowLeftRight } from 'lucide-react'
 import { toast } from 'sonner'
-import { crearFactura, FacturaData, FacturaItem, getCartera, marcarComoPagada } from '@/app/actions/facturas'
+import { anularFactura, crearFactura, FacturaData, FacturaItem, getCartera, marcarComoPagada, registrarAbonoFactura } from '@/app/actions/facturas'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { abrirCaja, cerrarCaja } from '@/app/actions/caja'
@@ -20,23 +20,52 @@ const calculateLinePrice = (productDef: any, cajas: number, blisters: number, un
   return (pvpCaja * cajas) + (pvpBlister * blisters) + (pvpUnidad * unidades)
 }
 
-export function FacturacionClient({ 
-  inventarioInitial, 
+export function FacturacionClient({
+  inventarioInitial,
   vendedores,
   cajaAbierta,
   carteraInitial = [],
-}: { 
+  userRole = 'vendedor',
+}: {
   inventarioInitial: any[],
   vendedores: any[],
   cajaAbierta: any,
   carteraInitial?: any[],
+  userRole?: string,
 }) {
   const router = useRouter()
-  
+  const isAdmin = userRole === 'admin' || userRole === 'superadmin'
+  const [cancelingFactura, setCancelingFactura] = useState<any | null>(null)
+  const [cancelReason, setCancelReason] = useState('')
+  const [isCancelingFactura, setIsCancelingFactura] = useState(false)
+  const [equivalentesSource, setEquivalentesSource] = useState<any | null>(null)
+  const [payingAbonoFactura, setPayingAbonoFactura] = useState<any | null>(null)
+  const [abonoMonto, setAbonoMonto] = useState('')
+  const [abonoMetodo, setAbonoMetodo] = useState<'efectivo' | 'tarjeta' | 'transferencia'>('efectivo')
+  const [abonoNotas, setAbonoNotas] = useState('')
+  const [isSavingAbono, setIsSavingAbono] = useState(false)
+
+  const equivalentesList = useMemo(() => {
+    const rawMolecula = equivalentesSource?.principio_activo?.trim().toLowerCase()
+    if (!rawMolecula) return []
+    return inventarioInitial.filter((p) => {
+      if (p.producto_id === equivalentesSource.producto_id) return false
+      if ((p.principio_activo || '').trim().toLowerCase() !== rawMolecula) return false
+      return (Number(p.cajas) || 0) > 0 || (Number(p.blisters) || 0) > 0 || (Number(p.unidades) || 0) > 0
+    })
+  }, [equivalentesSource, inventarioInitial])
+
   // --- STATE ---
   const [activeTab, setActiveTab] = useState<'pos' | 'ventas'>('pos')
   const [searchTerm, setSearchTerm] = useState('')
   const [cart, setCart] = useState<FacturaItem[]>([])
+
+  const hasFormulaItems = useMemo(() => {
+    return cart.some((item) => {
+      const info = inventarioInitial.find((p) => p.producto_id === item.producto_id)
+      return Boolean(info?.requiere_formula)
+    })
+  }, [cart, inventarioInitial])
   // --- Vendedor (obligatorio, auto-default al primer vendedor) ---
   const [vendedorId, setVendedorId] = useState<string>(vendedores?.[0]?.id || '')
   // --- Cliente ---
@@ -85,7 +114,7 @@ export function FacturacionClient({
         .order('numero', { ascending: false })
         .limit(1)
         .maybeSingle()
-      
+
       if (!error && data) {
         setNextFacturaNum(data.numero + 1)
       } else {
@@ -99,7 +128,7 @@ export function FacturacionClient({
   const addToCart = useCallback((product: any) => {
     setCart(prev => {
       const existing = prev.find(item => item.producto_id === product.producto_id)
-      
+
       if (existing) {
         return prev.map(item => {
           if (item.producto_id === product.producto_id) {
@@ -107,12 +136,12 @@ export function FacturacionClient({
             if (item.cantidad_unidades < (product.unidades || 0)) fieldToIncrement = 'cantidad_unidades'
             else if (item.cantidad_blisters < (product.blisters || 0)) fieldToIncrement = 'cantidad_blisters'
             else if (item.cantidad_cajas < (product.cajas || 0)) fieldToIncrement = 'cantidad_cajas'
-            
+
             if (fieldToIncrement) {
               const newVal = item[fieldToIncrement] + 1
-              const newPrice = calculateLinePrice(product, 
-                fieldToIncrement === 'cantidad_cajas' ? newVal : item.cantidad_cajas, 
-                fieldToIncrement === 'cantidad_blisters' ? newVal : item.cantidad_blisters, 
+              const newPrice = calculateLinePrice(product,
+                fieldToIncrement === 'cantidad_cajas' ? newVal : item.cantidad_cajas,
+                fieldToIncrement === 'cantidad_blisters' ? newVal : item.cantidad_blisters,
                 fieldToIncrement === 'cantidad_unidades' ? newVal : item.cantidad_unidades
               )
               return { ...item, [fieldToIncrement]: newVal, precio_linea: newPrice * (1 - (descuentoPct / 100)), precio_unitario_base: newPrice }
@@ -136,7 +165,7 @@ export function FacturacionClient({
         nombre: product.nombre_producto,
         cantidad_cajas: defCajas,
         cantidad_blisters: defBlisters,
-        cantidad_unidades: defUnidades, 
+        cantidad_unidades: defUnidades,
         precio_unitario_base: basePrice,
         descuento_porcentaje: descuentoPct,
         precio_linea: basePrice * (1 - (descuentoPct / 100)),
@@ -151,10 +180,10 @@ export function FacturacionClient({
   useBarcodeScanner((barcode) => {
     // Only process if we are in POS tab and not currently interacting with an input
     if (activeTab !== 'pos') return
-    
+
     // Check if the barcode matches any product in inventarioInitial
     const product = inventarioInitial.find(p => (p.codigo || p.codigo_producto) === barcode)
-    
+
     if (product) {
       addToCart(product)
     } else {
@@ -176,7 +205,7 @@ export function FacturacionClient({
   const searchResults = useMemo(() => {
     if (!searchTerm.trim()) return []
     const term = searchTerm.toLowerCase()
-    return inventarioInitial.filter(item => 
+    return inventarioInitial.filter(item =>
       item.nombre_producto?.toLowerCase().includes(term) ||
       (item.codigo || item.codigo_producto)?.toLowerCase().includes(term) ||
       (item.laboratorio || item.laboratorio_nombre)?.toLowerCase().includes(term) ||
@@ -188,37 +217,39 @@ export function FacturacionClient({
   // cartTotal = suma bruta sin descuento ni IVA
   const cartSubtotalBruto = useMemo(() =>
     cart.reduce((sum, item) => sum + item.precio_unitario_base, 0)
-  , [cart])
+    , [cart])
 
   const cartDescuentoMonto = useMemo(() =>
     cart.reduce((sum, item) => sum + (item.precio_unitario_base - item.precio_linea), 0)
-  , [cart])
+    , [cart])
 
   const cartBaseIva = useMemo(() => cartSubtotalBruto - cartDescuentoMonto, [cartSubtotalBruto, cartDescuentoMonto])
 
   const cartIvaMonto = useMemo(() =>
     Math.round(cartBaseIva * (ivaPct / 100))
-  , [cartBaseIva, ivaPct])
+    , [cartBaseIva, ivaPct])
 
   const cartTotal = useMemo(() => cartBaseIva + cartIvaMonto, [cartBaseIva, cartIvaMonto])
-  
+
   const vueltas = useMemo(() => {
     const recibido = Number(efectivoRecibido.replace(/\D/g, '')) || 0;
     return Math.max(0, recibido - cartTotal);
   }, [efectivoRecibido, cartTotal])
 
   const kpisVentas = useMemo(() => {
-    let total = 0, efectivo = 0, tarjeta = 0, transferencia = 0
+    let total = 0, efectivo = 0, tarjeta = 0, transferencia = 0, count = 0
     ventasHoy.forEach(f => {
+      if (f.estado_pago === 'anulada') return
       const t = Number(f.total) || 0
       total += t
+      count += 1
       if (f.estado_pago === 'pagado') {
         if (f.metodo_pago === 'efectivo') efectivo += t
         else if (f.metodo_pago === 'tarjeta') tarjeta += t
         else transferencia += t
       }
     })
-    return { total, efectivo, tarjeta, transferencia, count: ventasHoy.length, promedio: ventasHoy.length > 0 ? total / ventasHoy.length : 0 }
+    return { total, efectivo, tarjeta, transferencia, count, promedio: count > 0 ? total / count : 0 }
   }, [ventasHoy])
 
   const totalGastosSesion = useMemo(
@@ -336,12 +367,12 @@ export function FacturacionClient({
         if (!productDef) return item
 
         const updatedItem = { ...item, [field]: value }
-        
+
         const basePrice = calculateLinePrice(productDef, updatedItem.cantidad_cajas, updatedItem.cantidad_blisters, updatedItem.cantidad_unidades)
         updatedItem.precio_unitario_base = basePrice
         updatedItem.descuento_porcentaje = descuentoPct
         updatedItem.precio_linea = basePrice * (1 - (descuentoPct / 100))
-        
+
         return updatedItem
       }
       return item
@@ -365,13 +396,13 @@ export function FacturacionClient({
       toast.error('El carrito está vacío')
       return
     }
-    
+
     for (const item of cart) {
       const productDef = inventarioInitial.find(p => p.producto_id === item.producto_id)
       if (productDef) {
-        if (item.cantidad_cajas > productDef.cajas || 
-            item.cantidad_blisters > productDef.blisters || 
-            item.cantidad_unidades > productDef.unidades) {
+        if (item.cantidad_cajas > productDef.cajas ||
+          item.cantidad_blisters > productDef.blisters ||
+          item.cantidad_unidades > productDef.unidades) {
           toast.error(`Stock insuficiente para ${item.nombre}. Revisa las cantidades.`)
           return
         }
@@ -380,21 +411,21 @@ export function FacturacionClient({
 
     setIsProcessing(true)
     const payload: FacturaData = {
-      cliente_nombre:        clienteSelected?.nombre || 'Consumidor Final',
-      cliente_documento:     clienteSelected?.documento || '000000000',
-      metodo_pago:           metodoPago,
-      tipo_venta:            tipoVenta,
-      condicion_pago_dias:   tipoVenta === 'credito' ? condicionPagoDias : 0,
-      orden_compra:          ordenCompra || undefined,
-      subtotal_bruto:        cartSubtotalBruto,
-      descuento_porcentaje:  descuentoPct,
-      descuento_monto:       cartDescuentoMonto,
-      iva_porcentaje:        ivaPct,
-      iva_total:             cartIvaMonto,
-      total:                 cartTotal,
-      vendedor_id:           vendedorId,
-      caja_sesion_id:        cajaAbierta.id,
-      items:                 cart.map(i => ({ ...i, precio_linea_original: i.precio_linea }))
+      cliente_nombre: clienteSelected?.nombre || 'Consumidor Final',
+      cliente_documento: clienteSelected?.documento || '000000000',
+      metodo_pago: metodoPago,
+      tipo_venta: tipoVenta,
+      condicion_pago_dias: tipoVenta === 'credito' ? condicionPagoDias : 0,
+      orden_compra: ordenCompra || undefined,
+      subtotal_bruto: cartSubtotalBruto,
+      descuento_porcentaje: descuentoPct,
+      descuento_monto: cartDescuentoMonto,
+      iva_porcentaje: ivaPct,
+      iva_total: cartIvaMonto,
+      total: cartTotal,
+      vendedor_id: vendedorId,
+      caja_sesion_id: cajaAbierta.id,
+      items: cart.map(i => ({ ...i, precio_linea_original: i.precio_linea }))
     }
 
     const res = await crearFactura(payload)
@@ -410,7 +441,7 @@ export function FacturacionClient({
       setCondicionPagoDias(0)
       router.refresh()
       fetchVentas()
-      
+
       if (res.factura?.id) {
         setCreatedFacturaId(res.factura.id)
         setShowPrintModal(true)
@@ -460,12 +491,12 @@ export function FacturacionClient({
         </div>
         <h2 className="text-3xl font-black text-slate-900 mb-2 tracking-tight">La caja está cerrada</h2>
         <p className="text-slate-500 font-bold mb-8 max-w-md">No puedes realizar ventas hasta que se inicie una nueva sesión de caja. Ingresa el dinero base para comenzar.</p>
-        
+
         <div className="flex flex-col gap-4 w-full max-w-sm">
           <div className="relative">
             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-black">$</span>
-            <input 
-              type="number" 
+            <input
+              type="number"
               value={montoApertura}
               onChange={e => {
                 const val = Number(e.target.value);
@@ -475,7 +506,7 @@ export function FacturacionClient({
               placeholder="Base en caja"
             />
           </div>
-          <button 
+          <button
             onClick={handleAbrirCaja}
             disabled={isOpeningCaja}
             className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-2xl font-black text-lg transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
@@ -540,34 +571,52 @@ export function FacturacionClient({
         <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0">
           {/* LEFT: Search + Cart */}
           <div className="flex-1 flex flex-col gap-4 bg-white rounded-3xl border border-slate-100 shadow-xl overflow-hidden p-4 lg:p-5 min-h-0">
-            
+
             {/* Search Bar */}
             <div className="relative z-20 shrink-0">
               <div className="relative group">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 w-5 h-5 transition-colors" />
-                <input 
-                  type="text" 
-                  placeholder="Buscar producto por nombre, código o lab..." 
+                <input
+                  type="text"
+                  placeholder="Buscar producto por nombre, código o lab..."
                   className="w-full pl-12 pr-4 py-3 bg-slate-50 border-none rounded-2xl text-sm font-bold focus:bg-white focus:ring-[6px] focus:ring-indigo-600/5 transition-all outline-none shadow-inner"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
               {searchResults.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-100 rounded-2xl shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden z-30">
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-100 rounded-2xl shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden z-30 max-h-80 overflow-y-auto">
                   {searchResults.map(item => (
-                    <button key={item.producto_id} onClick={() => addToCart(item)}
-                      className="w-full text-left px-5 py-3 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 flex items-center justify-between group">
-                      <div>
-                        <h4 className="font-black text-slate-900 text-sm group-hover:text-indigo-600 transition-colors">{item.nombre_producto}</h4>
+                    <div key={item.producto_id}
+                      className="w-full px-5 py-3 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 flex items-center justify-between gap-3 group">
+                      <button type="button" onClick={() => addToCart(item)} className="flex-1 text-left min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h4 className="font-black text-slate-900 text-sm group-hover:text-indigo-600 transition-colors truncate">{item.nombre_producto}</h4>
+                          {item.requiere_formula && (
+                            <span className="text-[9px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded uppercase">Rx Fórmula</span>
+                          )}
+                        </div>
                         {item.principio_activo && <p className="text-[10px] text-indigo-500 font-bold mb-0.5 mt-0.5 bg-indigo-50 inline-block px-1.5 py-0.5 rounded">Molécula: {item.principio_activo}</p>}
                         <p className="text-xs font-bold text-slate-400">{item.laboratorio || item.laboratorio_nombre} • {item.codigo || item.codigo_producto}</p>
+                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {item.principio_activo && (
+                          <button
+                            type="button"
+                            onClick={() => setEquivalentesSource(item)}
+                            className="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-black inline-flex items-center gap-1 transition-colors"
+                            title="Ver equivalentes con el mismo principio activo"
+                          >
+                            <ArrowLeftRight className="w-3 h-3" />
+                            Equiv.
+                          </button>
+                        )}
+                        <div className="text-right">
+                          <p className="text-emerald-600 font-black text-sm">${calculatePV(item.precio_unidad || 0, item.margen_unidad || 0).toLocaleString()} <span className="text-[10px] text-slate-400">/u</span></p>
+                          <p className="text-[10px] font-bold text-slate-400">Stock: {item.cajas}C / {item.blisters}B / {item.unidades}U</p>
+                        </div>
                       </div>
-                      <div className="text-right shrink-0 ml-4">
-                        <p className="text-emerald-600 font-black text-sm">${calculatePV(item.precio_unidad || 0, item.margen_unidad || 0).toLocaleString()} <span className="text-[10px] text-slate-400">/u</span></p>
-                        <p className="text-[10px] font-bold text-slate-400">Stock: {item.cajas}C / {item.blisters}B / {item.unidades}U</p>
-                      </div>
-                    </button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -584,54 +633,63 @@ export function FacturacionClient({
                 </div>
               ) : (
                 <div className="space-y-2">
+                  {hasFormulaItems && (
+                    <div className="rounded-xl bg-rose-50 border border-rose-200 px-3.5 py-2.5 flex items-center gap-2 text-xs font-bold text-rose-700">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+                      <span>
+                        Atención: el carrito contiene medicamentos sujetos a fórmula médica (Rx). Verifica la receta antes de dispensar.
+                      </span>
+                    </div>
+                  )}
                   {cart.map(item => {
                     const stockInfo = inventarioInitial.find(p => p.producto_id === item.producto_id);
                     return (
-                    <div key={item.producto_id} className="bg-slate-50 p-3 rounded-2xl flex items-center justify-between gap-3 group border border-transparent hover:border-slate-200 transition-all">
-                      <div className="flex-1 min-w-0 flex flex-col gap-1">
-                        <p className="font-black text-slate-900 text-sm truncate">{item.nombre}</p>
-                        <div className="flex items-center gap-2">
-                          <p className="text-indigo-600 font-black text-base">${item.precio_linea.toLocaleString()}</p>
-                          {item.descuento_porcentaje > 0 && (
-                            <span className="bg-rose-100 text-rose-600 text-[8px] font-black px-1 rounded">-{item.descuento_porcentaje}%</span>
-                          )}
-                          {stockInfo && (
-                            <span className="text-[9px] font-bold text-slate-500 bg-slate-200/50 px-1.5 py-0.5 rounded-md truncate">
-                              Stock: {stockInfo.cajas}C {stockInfo.blisters}B {stockInfo.unidades}U
-                            </span>
-                          )}
+                      <div key={item.producto_id} className="bg-slate-50 p-3 rounded-2xl flex items-center justify-between gap-3 group border border-transparent hover:border-slate-200 transition-all">
+                        <div className="flex-1 min-w-0 flex flex-col gap-1">
+                          <p className="font-black text-slate-900 text-sm truncate">{item.nombre}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-indigo-600 font-black text-base">${item.precio_linea.toLocaleString()}</p>
+                            {item.descuento_porcentaje > 0 && (
+                              <span className="bg-rose-100 text-rose-600 text-[8px] font-black px-1 rounded">-{item.descuento_porcentaje}%</span>
+                            )}
+                            {stockInfo && (
+                              <span className="text-[9px] font-bold text-slate-500 bg-slate-200/50 px-1.5 py-0.5 rounded-md truncate">
+                                Stock: {stockInfo.cajas}C {stockInfo.blisters}B {stockInfo.unidades}U
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                      
-                      <div className="flex items-center gap-1 shrink-0">
-                        {(['cantidad_cajas', 'cantidad_blisters', 'cantidad_unidades'] as const).map((field, idx) => {
-                          const labels = ['CAJA', 'BLÍSTER', 'UNIDAD']
-                          const stockFields = ['cajas', 'blisters', 'unidades']
-                          const stockVal = stockInfo ? (stockInfo[stockFields[idx] as any] || 0) : 0
-                          const val = item[field]
-                          
-                          // Deshabilitar visualmente si el inventario de esta presentación es 0
-                          const isZeroStock = stockVal === 0
-                          const maxReached = val >= stockVal
 
-                          return (
-                            <div key={field} className={`flex flex-col items-center gap-0.5 ${isZeroStock && val === 0 ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
-                              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{labels[idx]}</span>
-                              <div className="flex items-center bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
-                                <button onClick={() => updateQuantity(item.producto_id, field, val - 1)} disabled={val <= 0} className="p-1.5 hover:bg-slate-100 transition-colors text-slate-700 disabled:opacity-30"><Minus className="w-3.5 h-3.5" /></button>
-                                <span className="w-6 text-center text-sm font-black text-slate-900">{val}</span>
-                                <button onClick={() => updateQuantity(item.producto_id, field, val + 1)} disabled={maxReached} className="p-1.5 hover:bg-slate-100 transition-colors text-slate-700 disabled:opacity-30"><Plus className="w-3.5 h-3.5" /></button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {(['cantidad_cajas', 'cantidad_blisters', 'cantidad_unidades'] as const).map((field, idx) => {
+                            const labels = ['CAJA', 'BLÍSTER', 'UNIDAD']
+                            const stockFields = ['cajas', 'blisters', 'unidades']
+                            const stockVal = stockInfo ? (stockInfo[stockFields[idx] as any] || 0) : 0
+                            const val = item[field]
+
+                            // Deshabilitar visualmente si el inventario de esta presentación es 0
+                            const isZeroStock = stockVal === 0
+                            const maxReached = val >= stockVal
+
+                            return (
+                              <div key={field} className={`flex flex-col items-center gap-0.5 ${isZeroStock && val === 0 ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
+                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{labels[idx]}</span>
+                                <div className="flex items-center bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
+                                  <button onClick={() => updateQuantity(item.producto_id, field, val - 1)} disabled={val <= 0} className="p-1.5 hover:bg-slate-100 transition-colors text-slate-700 disabled:opacity-30"><Minus className="w-3.5 h-3.5" /></button>
+                                  <span className="w-6 text-center text-sm font-black text-slate-900">{val}</span>
+                                  <button onClick={() => updateQuantity(item.producto_id, field, val + 1)} disabled={maxReached} className="p-1.5 hover:bg-slate-100 transition-colors text-slate-700 disabled:opacity-30"><Plus className="w-3.5 h-3.5" /></button>
+                                </div>
                               </div>
-                            </div>
-                          )
-                        })}
-                      </div>
+                            )
+                          })}
+                        </div>
 
-                      <button onClick={() => removeFromCart(item.producto_id)} className="p-2 bg-rose-50 text-rose-500 hover:bg-rose-100 rounded-xl shrink-0 transition-colors ml-1">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )})}
+                        <button onClick={() => removeFromCart(item.producto_id)} className="p-2 bg-rose-50 text-rose-500 hover:bg-rose-100 rounded-xl shrink-0 transition-colors ml-1">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -640,7 +698,7 @@ export function FacturacionClient({
 
           {/* RIGHT: Checkout Panel (Simplified UI for older users) */}
           <div className="w-full lg:w-[380px] flex flex-col gap-3 shrink-0 min-h-0 overflow-y-auto">
-            
+
             {/* ── HEADER DE FACTURACION ── */}
             <div className="bg-white rounded-[2rem] p-5 border-2 border-indigo-100 shadow-sm flex flex-col gap-4 shrink-0">
               <div className="text-center">
@@ -655,7 +713,7 @@ export function FacturacionClient({
                 <p className="text-slate-500 text-[10px] font-black uppercase tracking-tight mb-2 text-center">Método de Pago</p>
                 <div className="grid grid-cols-3 gap-2">
                   {(['efectivo', 'tarjeta', 'transferencia'] as const).map(metodo => (
-                    <button 
+                    <button
                       key={metodo}
                       onClick={() => setMetodoPago(metodo)}
                       className={`py-3 rounded-xl font-black text-xs transition-all border-2 ${metodoPago === metodo ? 'border-indigo-600 bg-indigo-50 text-indigo-700 shadow-sm' : 'border-slate-100 bg-white text-slate-500 hover:border-slate-300'}`}
@@ -670,7 +728,7 @@ export function FacturacionClient({
               {metodoPago === 'efectivo' && (
                 <div className="bg-slate-50 rounded-2xl p-4 mt-2 border border-slate-100">
                   <p className="text-slate-600 text-xs font-black uppercase tracking-tight mb-2 text-center">Efectivo Recibido</p>
-                  
+
                   {/* Botones de dinero rápido */}
                   <div className="flex gap-2 mb-3 overflow-x-auto pb-1 custom-scrollbar">
                     <button onClick={() => setEfectivoRecibido(cartTotal.toString())} className="px-3 py-2 shrink-0 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 transition-colors">Exacto</button>
@@ -682,9 +740,9 @@ export function FacturacionClient({
                   {/* Input de Efectivo manual */}
                   <div className="relative mb-4">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-black text-lg">$</span>
-                    <input 
-                      type="text" 
-                      value={efectivoRecibido ? Number(efectivoRecibido.replace(/\D/g, '') || 0).toLocaleString() : ''} 
+                    <input
+                      type="text"
+                      value={efectivoRecibido ? Number(efectivoRecibido.replace(/\D/g, '') || 0).toLocaleString() : ''}
                       onChange={e => setEfectivoRecibido(e.target.value.replace(/\D/g, ''))}
                       className="w-full pl-8 pr-4 py-3 bg-white border-2 border-slate-200 focus:border-indigo-500 rounded-xl font-black text-xl text-slate-900 text-right outline-none transition-all shadow-inner"
                       placeholder="0"
@@ -701,7 +759,7 @@ export function FacturacionClient({
 
               {/* Botón de Opciones Avanzadas */}
               <div className="mt-2">
-                <button 
+                <button
                   onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
                   className="w-full flex items-center justify-center gap-2 py-2 text-slate-400 hover:text-indigo-600 transition-colors text-[10px] font-black uppercase tracking-widest"
                 >
@@ -709,7 +767,7 @@ export function FacturacionClient({
                   {showAdvancedOptions ? 'Ocultar Opciones Avanzadas' : 'Opciones Avanzadas'}
                   <ChevronDown className={`w-3 h-3 transition-transform ${showAdvancedOptions ? 'rotate-180' : ''}`} />
                 </button>
-                
+
                 {showAdvancedOptions && (
                   <div className="grid grid-cols-2 gap-3 mt-3 p-3 bg-slate-50 rounded-2xl border border-slate-100">
                     <div className="bg-white rounded-xl p-2 border border-slate-100 relative">
@@ -800,17 +858,17 @@ export function FacturacionClient({
 
               {showClienteForm && (
                 <div className="bg-slate-50 rounded-2xl p-4 flex flex-col gap-2.5 border border-slate-100 mt-1 animate-in zoom-in-95 duration-200">
-                  <input type="text" placeholder="Nombre completo *" value={nuevoCliente.nombre} onChange={e => setNuevoCliente(p => ({...p, nombre: e.target.value}))} className="w-full px-4 py-2.5 bg-white rounded-xl text-sm font-bold text-slate-900 outline-none border border-slate-200" />
+                  <input type="text" placeholder="Nombre completo *" value={nuevoCliente.nombre} onChange={e => setNuevoCliente(p => ({ ...p, nombre: e.target.value }))} className="w-full px-4 py-2.5 bg-white rounded-xl text-sm font-bold text-slate-900 outline-none border border-slate-200" />
                   <div className="grid grid-cols-2 gap-2">
-                    <select value={nuevoCliente.tipo_doc} onChange={e => setNuevoCliente(p => ({...p, tipo_doc: e.target.value}))} className="px-3 py-2.5 bg-white rounded-xl text-sm font-bold outline-none border border-slate-200">
+                    <select value={nuevoCliente.tipo_doc} onChange={e => setNuevoCliente(p => ({ ...p, tipo_doc: e.target.value }))} className="px-3 py-2.5 bg-white rounded-xl text-sm font-bold outline-none border border-slate-200">
                       <option value="NIT">NIT</option>
                       <option value="CC">CC</option>
                     </select>
-                    <input type="text" placeholder="Documento *" value={nuevoCliente.documento} onChange={e => setNuevoCliente(p => ({...p, documento: e.target.value}))} className="w-full px-4 py-2.5 bg-white rounded-xl text-sm font-bold text-slate-900 outline-none border border-slate-200" />
+                    <input type="text" placeholder="Documento *" value={nuevoCliente.documento} onChange={e => setNuevoCliente(p => ({ ...p, documento: e.target.value }))} className="w-full px-4 py-2.5 bg-white rounded-xl text-sm font-bold text-slate-900 outline-none border border-slate-200" />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <input type="email" placeholder="Correo (opcional)" value={nuevoCliente.email} onChange={e => setNuevoCliente(p => ({...p, email: e.target.value}))} className="w-full px-4 py-2.5 bg-white rounded-xl text-sm font-bold text-slate-900 outline-none border border-slate-200" />
-                    <select value={nuevoCliente.tipo_cliente} onChange={e => setNuevoCliente(p => ({...p, tipo_cliente: e.target.value}))} className="w-full px-3 py-2.5 bg-indigo-50 text-indigo-700 rounded-xl text-xs font-black outline-none border border-indigo-100">
+                    <input type="email" placeholder="Correo (opcional)" value={nuevoCliente.email} onChange={e => setNuevoCliente(p => ({ ...p, email: e.target.value }))} className="w-full px-4 py-2.5 bg-white rounded-xl text-sm font-bold text-slate-900 outline-none border border-slate-200" />
+                    <select value={nuevoCliente.tipo_cliente} onChange={e => setNuevoCliente(p => ({ ...p, tipo_cliente: e.target.value }))} className="w-full px-3 py-2.5 bg-indigo-50 text-indigo-700 rounded-xl text-xs font-black outline-none border border-indigo-100">
                       <option value="persona">Consumidor Final</option>
                       <option value="distribuidor">Distribuidora (Descuento)</option>
                     </select>
@@ -886,15 +944,15 @@ export function FacturacionClient({
                   <span>+${cartIvaMonto.toLocaleString()}</span>
                 </div>
               </div>
-              
+
               <div className="h-px bg-slate-100 my-1" />
-              
+
               <div className="flex flex-col gap-3">
                 <div className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
                   <span className="text-sm font-black text-slate-500 uppercase tracking-widest">Total Neto a Pagar</span>
                   <span className="text-4xl font-black text-indigo-600 tracking-tighter leading-none">${cartTotal.toLocaleString()}</span>
                 </div>
-                <button 
+                <button
                   onClick={handleProcessSale}
                   disabled={isProcessing || cart.length === 0}
                   className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-5 rounded-2xl font-black text-2xl shadow-xl shadow-indigo-600/20 transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-3"
@@ -926,21 +984,21 @@ export function FacturacionClient({
             </div>
             <div className="bg-slate-900 rounded-2xl p-5 text-white flex flex-col gap-2">
               <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1">Por Método</p>
-              <button 
+              <button
                 onClick={() => setFilterMethod(filterMethod === 'efectivo' ? 'todos' : 'efectivo')}
                 className={`flex justify-between items-center text-sm p-1.5 rounded-lg transition-all ${filterMethod === 'efectivo' ? 'bg-indigo-500 text-white' : 'hover:bg-slate-800'}`}
               >
                 <span className={filterMethod === 'efectivo' ? 'text-indigo-100 font-bold' : 'text-slate-400'}>Efectivo</span>
                 <span className="font-black">${kpisVentas.efectivo.toLocaleString()}</span>
               </button>
-              <button 
+              <button
                 onClick={() => setFilterMethod(filterMethod === 'tarjeta' ? 'todos' : 'tarjeta')}
                 className={`flex justify-between items-center text-sm p-1.5 rounded-lg transition-all ${filterMethod === 'tarjeta' ? 'bg-indigo-500 text-white' : 'hover:bg-slate-800'}`}
               >
                 <span className={filterMethod === 'tarjeta' ? 'text-indigo-100 font-bold' : 'text-slate-400'}>Tarjeta</span>
                 <span className="font-black">${kpisVentas.tarjeta.toLocaleString()}</span>
               </button>
-              <button 
+              <button
                 onClick={() => setFilterMethod(filterMethod === 'transferencia' ? 'todos' : 'transferencia')}
                 className={`flex justify-between items-center text-sm p-1.5 rounded-lg transition-all ${filterMethod === 'transferencia' ? 'bg-indigo-500 text-white' : 'hover:bg-slate-800'}`}
               >
@@ -958,7 +1016,7 @@ export function FacturacionClient({
                   Filtro activo: <span className="uppercase font-black text-indigo-700">{filterMethod}</span> ({ventasFiltradas.length} resultados)
                 </p>
               </div>
-              <button 
+              <button
                 onClick={() => setFilterMethod('todos')}
                 className="text-xs font-black text-indigo-600 hover:text-indigo-800 bg-white px-3 py-1.5 rounded-xl border border-indigo-200 shadow-sm transition-all active:scale-95"
               >
@@ -1032,7 +1090,7 @@ export function FacturacionClient({
                               {expandedFacturaId === f.id ? <ChevronDown className="w-3 h-3 rotate-180" /> : <ChevronDown className="w-3 h-3" />}
                               #{f.numero}
                             </td>
-                            <td className="px-5 py-3 font-bold text-slate-600">{new Date(f.created_at).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}</td>
+                            <td className="px-5 py-3 font-bold text-slate-600">{new Date(f.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
                             <td className="px-5 py-3">
                               <p className="font-bold text-slate-900">{f.cliente_nombre}</p>
                               <p className="text-[10px] text-slate-400 font-bold">{f.cliente_documento}</p>
@@ -1043,11 +1101,25 @@ export function FacturacionClient({
                               </span>
                             </td>
                             <td className="px-5 py-3">
-                              <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-black uppercase ${f.estado_pago === 'pagado' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                              <span
+                                className={`inline-block px-2 py-0.5 rounded text-[9px] font-black uppercase ${f.estado_pago === 'pagado'
+                                    ? 'bg-emerald-100 text-emerald-700'
+                                    : f.estado_pago === 'anulada'
+                                      ? 'bg-slate-200 text-slate-600'
+                                      : 'bg-rose-100 text-rose-700'
+                                  }`}
+                              >
                                 {f.estado_pago}
                               </span>
                             </td>
-                            <td className="px-5 py-3 font-black text-slate-900 text-base">${Number(f.total).toLocaleString()}</td>
+                            <td
+                              className={`px-5 py-3 font-black text-base ${f.estado_pago === 'anulada'
+                                  ? 'text-slate-400 line-through'
+                                  : 'text-slate-900'
+                                }`}
+                            >
+                              ${Number(f.total).toLocaleString()}
+                            </td>
                             <td className="px-5 py-3">
                               <div className="flex gap-2">
                                 {f.estado_pago === 'pendiente' && (
@@ -1064,6 +1136,20 @@ export function FacturacionClient({
                                     Pagar
                                   </button>
                                 )}
+                                {isAdmin && f.estado_pago !== 'anulada' && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setCancelingFactura(f)
+                                      setCancelReason('')
+                                    }}
+                                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[9px] font-black rounded-lg transition-all uppercase inline-flex items-center gap-1"
+                                    title="Anular factura y devolver stock"
+                                  >
+                                    <Ban className="w-3 h-3" />
+                                    Anular
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -1071,6 +1157,11 @@ export function FacturacionClient({
                             <tr>
                               <td colSpan={7} className="px-5 py-4 bg-slate-50/50">
                                 <div className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm animate-in slide-in-from-top-1 duration-200">
+                                  {f.estado_pago === 'anulada' && (
+                                    <div className="mb-3 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700 font-bold">
+                                      Factura anulada{f.motivo_anulacion ? ` — Motivo: ${f.motivo_anulacion}` : ' (stock devuelto al inventario)'}
+                                    </div>
+                                  )}
                                   <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Detalle de Productos</h4>
                                   <div className="space-y-2">
                                     {f.detalles?.map((d: any, idx: number) => (
@@ -1091,7 +1182,7 @@ export function FacturacionClient({
                                         <div className="text-right">
                                           {f.descuento_porcentaje > 0 ? (
                                             <>
-                                              <p className="text-[10px] text-slate-400 line-through font-bold">${Number(d.precio_unitario / (1 - (f.descuento_porcentaje/100))).toLocaleString()}</p>
+                                              <p className="text-[10px] text-slate-400 line-through font-bold">${Number(d.precio_unitario / (1 - (f.descuento_porcentaje / 100))).toLocaleString()}</p>
                                               <p className="font-black text-emerald-600">${Number(d.precio_unitario).toLocaleString()} <span className="bg-rose-100 text-rose-600 text-[8px] px-1 rounded ml-1 tracking-tight">-{f.descuento_porcentaje}%</span></p>
                                             </>
                                           ) : (
@@ -1140,63 +1231,87 @@ export function FacturacionClient({
                           : Math.ceil((new Date(f.fecha_vencimiento).getTime() - new Date().getTime()) / (1000 * 3600 * 24))
                         const totalConDescuento = Number(f.total_con_descuento ?? f.total ?? 0)
                         const totalSinDescuento = Number(f.total_sin_descuento ?? (totalConDescuento + Number(f.descuento_monto || 0)))
-                      
-                      return (
-                        <tr key={f.id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="px-5 py-3 font-black text-indigo-600">#{f.numero}</td>
-                          <td className="px-5 py-3">
-                            <p className="font-bold text-slate-900">{f.cliente_nombre}</p>
-                            <p className="text-[10px] text-slate-400 font-bold">OC: {f.orden_compra || 'N/A'}</p>
-                          </td>
-                          <td className="px-5 py-3">
-                            <p className={`font-bold ${esVencido ? 'text-rose-600' : 'text-slate-600'}`}>
-                              {f.fecha_vencimiento ? new Date(f.fecha_vencimiento).toLocaleDateString() : '-'}
-                            </p>
-                            <p className="text-[10px] text-slate-400 font-bold">
-                              {esVencido ? `⚠️ Vencido hace ${Math.abs(diasRestantes)}d` : `✅ Vence en ${Math.max(0, diasRestantes)}d`}
-                            </p>
-                          </td>
-                          <td className="px-5 py-3">
-                            <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-black uppercase ${esVencido ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                              {esVencido ? 'EXPIRADO' : 'PRONTO PAGO'}
-                            </span>
-                          </td>
-                          <td className="px-5 py-3">
-                            {esVencido ? (
-                              <div className="flex flex-col">
-                                <span className="text-rose-600 font-black text-base">{formatCurrency(totalSinDescuento)}</span>
-                                <span className="text-[9px] text-slate-400 line-through font-bold">Base: {formatCurrency(totalConDescuento)}</span>
+
+                        return (
+                          <tr key={f.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="px-5 py-3 font-black text-indigo-600">#{f.numero}</td>
+                            <td className="px-5 py-3">
+                              <p className="font-bold text-slate-900">{f.cliente_nombre}</p>
+                              <p className="text-[10px] text-slate-400 font-bold">OC: {f.orden_compra || 'N/A'}</p>
+                            </td>
+                            <td className="px-5 py-3">
+                              <p className={`font-bold ${esVencido ? 'text-rose-600' : 'text-slate-600'}`}>
+                                {f.fecha_vencimiento ? new Date(f.fecha_vencimiento).toLocaleDateString() : '-'}
+                              </p>
+                              <p className="text-[10px] text-slate-400 font-bold">
+                                {esVencido ? `⚠️ Vencido hace ${Math.abs(diasRestantes)}d` : `✅ Vence en ${Math.max(0, diasRestantes)}d`}
+                              </p>
+                            </td>
+                            <td className="px-5 py-3">
+                              <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-black uppercase ${esVencido ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                {esVencido ? 'EXPIRADO' : 'PRONTO PAGO'}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3">
+                              {esVencido ? (
+                                <div className="flex flex-col">
+                                  <span className="text-rose-600 font-black text-base">{formatCurrency(f.saldo_pendiente ?? totalSinDescuento)}</span>
+                                  {Number(f.monto_abonado || 0) > 0 && (
+                                    <span className="text-[9px] text-indigo-600 font-bold">Abonado: {formatCurrency(f.monto_abonado)}</span>
+                                  )}
+                                  <span className="text-[9px] text-slate-400 line-through font-bold">Base: {formatCurrency(totalConDescuento)}</span>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col">
+                                  <span className="text-emerald-600 font-black text-base">{formatCurrency(f.saldo_pendiente ?? totalConDescuento)}</span>
+                                  {Number(f.monto_abonado || 0) > 0 ? (
+                                    <span className="text-[9px] text-indigo-600 font-bold">Abonado: {formatCurrency(f.monto_abonado)}</span>
+                                  ) : (
+                                    <span className="text-[9px] text-indigo-400 font-bold">Ahorro: {formatCurrency(f.descuento_monto)}</span>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-5 py-3">
+                              <div className="flex flex-wrap gap-1.5">
+                                <button
+                                  onClick={() => {
+                                    if (!cajaAbierta) { toast.error('Abre caja para registrar el abono'); return }
+                                    const saldo = Number(f.saldo_pendiente ?? (esVencido ? totalSinDescuento : totalConDescuento))
+                                    setPayingAbonoFactura({ ...f, saldo_calc: saldo })
+                                    setAbonoMonto(String(Math.round(saldo)))
+                                    setAbonoMetodo('efectivo')
+                                    setAbonoNotas('')
+                                  }}
+                                  className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10px] font-black rounded-lg transition-all uppercase"
+                                >
+                                  Abonar
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    if (!cajaAbierta) { toast.error('Abre caja para registrar el cobro'); return }
+                                    const monto = Number(f.saldo_pendiente ?? (esVencido ? totalSinDescuento : totalConDescuento))
+                                    if (!window.confirm(`¿Registrar pago total del saldo (${formatCurrency(monto)}) para la factura #${f.numero}?`)) return
+                                    const res = Number(f.monto_abonado || 0) > 0
+                                      ? await registrarAbonoFactura(f.id, cajaAbierta.id, monto, 'efectivo', 'Pago saldo final')
+                                      : await marcarComoPagada(f.id, cajaAbierta.id, 'efectivo')
+                                    if (res.success) {
+                                      toast.success('Cobro registrado correctamente')
+                                      await fetchVentas()
+                                      router.refresh()
+                                    } else {
+                                      toast.error(res.error || 'Error al registrar cobro')
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black rounded-lg shadow-sm transition-all uppercase"
+                                >
+                                  Cobrar
+                                </button>
                               </div>
-                            ) : (
-                              <div className="flex flex-col">
-                                <span className="text-emerald-600 font-black text-base">{formatCurrency(totalConDescuento)}</span>
-                                <span className="text-[9px] text-indigo-400 font-bold">Ahorro: {formatCurrency(f.descuento_monto)}</span>
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-5 py-3">
-                            <button
-                              onClick={async () => {
-                                if (!cajaAbierta) { toast.error('Abre caja para registrar el cobro'); return }
-                                const monto = esVencido ? totalSinDescuento : totalConDescuento
-                                if (!window.confirm(`¿Registrar cobro de ${formatCurrency(monto)} para la factura #${f.numero}?`)) return
-                                const res = await marcarComoPagada(f.id, cajaAbierta.id, 'efectivo')
-                                if (res.success) {
-                                  toast.success('Cobro registrado correctamente')
-                                  await fetchVentas()
-                                  router.refresh()
-                                } else {
-                                  toast.error(res.error || 'Error al registrar cobro')
-                                }
-                              }}
-                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black rounded-lg shadow-sm transition-all uppercase"
-                            >
-                              Cobrar
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    }))}
+                            </td>
+                          </tr>
+                        )
+                      }))}
                   </tbody>
                 </table>
               </div>
@@ -1207,15 +1322,15 @@ export function FacturacionClient({
       {/* Modal de Impresión */}
       {showPrintModal && createdFacturaId && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-          <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl flex flex-col items-center text-center animate-in zoom-in-95 duration-300">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col items-center text-center animate-in zoom-in-95 duration-300">
             <div className="w-20 h-20 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-6">
               <CheckCircle2 className="w-10 h-10" />
             </div>
             <h3 className="text-2xl font-black text-slate-900 mb-2">Venta Exitosa</h3>
             <p className="text-slate-500 font-bold mb-8">¿Deseas imprimir el recibo para el cliente?</p>
-            
+
             <div className="flex flex-col gap-3 w-full">
-              <button 
+              <button
                 onClick={() => {
                   window.open(`/facturas/${createdFacturaId}/print`, '_blank')
                   setShowPrintModal(false)
@@ -1225,7 +1340,7 @@ export function FacturacionClient({
               >
                 SÍ, IMPRIMIR RECIBO
               </button>
-              <button 
+              <button
                 onClick={() => {
                   setShowPrintModal(false)
                   setCreatedFacturaId(null)
@@ -1242,7 +1357,7 @@ export function FacturacionClient({
       {/* Modal Cierre de Caja */}
       {showCloseCajaModal && cajaAbierta && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl flex flex-col items-center animate-in zoom-in-95 duration-300">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col items-center animate-in zoom-in-95 duration-300">
             <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mb-6">
               <Lock className="w-10 h-10" />
             </div>
@@ -1251,35 +1366,41 @@ export function FacturacionClient({
               Ingresa el efectivo exacto que hay en la gaveta. El sistema calculará automáticamente si hay algún descuadre.
             </p>
 
-            <div className="w-full bg-slate-50 rounded-2xl p-5 mb-6 border border-slate-100 space-y-3">
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-500 font-bold">Fondo Base (Apertura)</span>
-                <span className="font-black text-slate-900">${Number(cajaAbierta.monto_apertura).toLocaleString()}</span>
+            {isAdmin ? (
+              <div className="w-full bg-slate-50 rounded-2xl p-5 mb-6 border border-slate-100 space-y-3">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-500 font-bold">Fondo Base (Apertura)</span>
+                  <span className="font-black text-slate-900">${Number(cajaAbierta.monto_apertura).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-500 font-bold">Ventas en Efectivo</span>
+                  <span className="font-black text-emerald-600">+ ${kpisVentas.efectivo.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-500 font-bold">Gastos en Efectivo</span>
+                  <span className="font-black text-rose-600">- ${totalGastosSesion.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-500 font-bold">Compras en Efectivo</span>
+                  <span className="font-black text-rose-600">- ${totalComprasEfectivoSesion.toLocaleString()}</span>
+                </div>
+                <div className="pt-3 border-t border-slate-200 flex justify-between items-center">
+                  <span className="text-slate-900 font-black uppercase text-xs">Total Esperado en Gaveta</span>
+                  <span className="font-black text-xl text-indigo-600">${totalEsperadoCaja.toLocaleString()}</span>
+                </div>
               </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-500 font-bold">Ventas en Efectivo</span>
-                <span className="font-black text-emerald-600">+ ${kpisVentas.efectivo.toLocaleString()}</span>
+            ) : (
+              <div className="w-full bg-amber-50 rounded-2xl p-4 mb-6 border border-amber-200 text-xs font-bold text-amber-800 text-center">
+                Arqueo ciego activo: cuenta el efectivo físico de tu gaveta y regístralo aquí para finalizar tu turno.
               </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-500 font-bold">Gastos en Efectivo</span>
-                <span className="font-black text-rose-600">- ${totalGastosSesion.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-500 font-bold">Compras en Efectivo</span>
-                <span className="font-black text-rose-600">- ${totalComprasEfectivoSesion.toLocaleString()}</span>
-              </div>
-              <div className="pt-3 border-t border-slate-200 flex justify-between items-center">
-                <span className="text-slate-900 font-black uppercase text-xs">Total Esperado en Gaveta</span>
-                <span className="font-black text-xl text-indigo-600">${totalEsperadoCaja.toLocaleString()}</span>
-              </div>
-            </div>
+            )}
 
             <div className="w-full relative mb-6">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Efectivo Físico en Gaveta</label>
               <span className="absolute left-4 top-[38px] text-slate-400 font-black text-lg">$</span>
-              <input 
-                type="text" 
-                value={efectivoCierreManual ? Number(efectivoCierreManual.replace(/\D/g, '')).toLocaleString() : ''} 
+              <input
+                type="text"
+                value={efectivoCierreManual ? Number(efectivoCierreManual.replace(/\D/g, '')).toLocaleString() : ''}
                 onChange={e => setEfectivoCierreManual(e.target.value.replace(/\D/g, ''))}
                 className="w-full pl-10 pr-6 py-4 bg-white border-2 border-slate-200 focus:border-rose-500 rounded-2xl font-black text-2xl text-slate-900 text-right outline-none transition-all shadow-inner"
                 placeholder="0"
@@ -1287,18 +1408,270 @@ export function FacturacionClient({
             </div>
 
             <div className="flex gap-3 w-full">
-              <button 
+              <button
                 onClick={() => setShowCloseCajaModal(false)}
                 className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-4 rounded-xl font-black transition-all active:scale-95"
               >
                 CANCELAR
               </button>
-              <button 
+              <button
                 onClick={handleCerrarCaja}
                 disabled={isClosingCaja || !efectivoCierreManual}
                 className="flex-1 bg-rose-600 hover:bg-rose-500 text-white py-4 rounded-xl font-black shadow-lg shadow-rose-600/20 transition-all active:scale-95 disabled:opacity-50"
               >
                 {isClosingCaja ? 'CERRANDO...' : 'CONFIRMAR CIERRE'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cancelingFactura && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-black text-slate-900">
+                  Anular Factura #{cancelingFactura.numero}
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Se devolverán automáticamente las cantidades vendidas al inventario y se registrará en auditoría.
+                </p>
+              </div>
+              <button
+                onClick={() => setCancelingFactura(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-xs space-y-1">
+              <p>
+                <span className="font-bold text-slate-500">Cliente:</span>{' '}
+                <span className="font-black text-slate-800">{cancelingFactura.cliente_nombre}</span>
+              </p>
+              <p>
+                <span className="font-bold text-slate-500">Total:</span>{' '}
+                <span className="font-black text-slate-800">
+                  ${Number(cancelingFactura.total).toLocaleString()}
+                </span>
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-600 block">
+                Motivo de anulación *
+              </label>
+              <input
+                type="text"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="Ej. Error en digitación o devolución del cliente"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-rose-500"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setCancelingFactura(null)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl text-xs font-black"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isCancelingFactura || !cancelReason.trim()}
+                onClick={async () => {
+                  setIsCancelingFactura(true)
+                  const res = await anularFactura(cancelingFactura.id, cancelReason)
+                  if (res.success) {
+                    toast.success(`Factura #${cancelingFactura.numero} anulada y stock devuelto`)
+                    setCancelingFactura(null)
+                    setCancelReason('')
+                    await fetchVentas()
+                    router.refresh()
+                  } else {
+                    toast.error(res.error || 'No se pudo anular la factura')
+                  }
+                  setIsCancelingFactura(false)
+                }}
+                className="flex-1 bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-xl text-xs font-black disabled:opacity-50"
+              >
+                {isCancelingFactura ? 'Anulando...' : 'Confirmar Anulación'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Equivalentes por Principio Activo */}
+      {equivalentesSource && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-wider text-indigo-600">
+                  Alternativas Terapéuticas Disponibles
+                </p>
+                <h3 className="text-lg font-black text-slate-900">
+                  Molécula: {equivalentesSource.principio_activo}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Alternativas con stock en tu droguería para {equivalentesSource.nombre_producto}.
+                </p>
+              </div>
+              <button
+                onClick={() => setEquivalentesSource(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {equivalentesList.length > 0 ? (
+              <div className="space-y-2">
+                {equivalentesList.map((eq) => (
+                  <div
+                    key={eq.producto_id}
+                    className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-black text-sm text-slate-900 truncate">
+                        {eq.nombre_producto}
+                      </p>
+                      <p className="text-[11px] font-bold text-slate-500">
+                        {eq.laboratorio || eq.laboratorio_nombre || 'Genérico'} • Stock: {eq.cajas}C / {eq.blisters}B / {eq.unidades}U
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        addToCart(eq)
+                        setEquivalentesSource(null)
+                        toast.success(`${eq.nombre_producto} agregado`)
+                      }}
+                      className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black shrink-0"
+                    >
+                      + Agregar
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl bg-slate-50 border border-dashed border-slate-200 p-6 text-center text-xs font-bold text-slate-500">
+                No hay otros productos disponibles con esta misma molécula en stock.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal Abono Parcial en Cartera */}
+      {payingAbonoFactura && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-black text-slate-900">
+                  Registrar Abono — Factura #{payingAbonoFactura.numero}
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Cliente: <strong>{payingAbonoFactura.cliente_nombre}</strong> • Saldo pendiente:{' '}
+                  <strong className="text-emerald-600">
+                    {formatCurrency(payingAbonoFactura.saldo_calc)}
+                  </strong>
+                </p>
+              </div>
+              <button
+                onClick={() => setPayingAbonoFactura(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-600 block">Monto a abonar *</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={payingAbonoFactura.saldo_calc}
+                  step="1"
+                  value={abonoMonto}
+                  onChange={(e) => setAbonoMonto(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-600 block">Método de pago</label>
+                <select
+                  value={abonoMetodo}
+                  onChange={(e) =>
+                    setAbonoMetodo(e.target.value as 'efectivo' | 'tarjeta' | 'transferencia')
+                  }
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none"
+                >
+                  <option value="efectivo">Efectivo</option>
+                  <option value="tarjeta">Tarjeta</option>
+                  <option value="transferencia">Transferencia</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-600 block">Nota (opcional)</label>
+                <input
+                  type="text"
+                  value={abonoNotas}
+                  onChange={(e) => setAbonoNotas(e.target.value)}
+                  placeholder="Ej. Abono transferencia Bancolombia"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setPayingAbonoFactura(null)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl text-xs font-black"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={
+                  isSavingAbono ||
+                  !abonoMonto ||
+                  Number(abonoMonto) <= 0 ||
+                  Number(abonoMonto) > Number(payingAbonoFactura.saldo_calc) + 0.01
+                }
+                onClick={async () => {
+                  if (!cajaAbierta) return
+                  setIsSavingAbono(true)
+                  const res = await registrarAbonoFactura(
+                    payingAbonoFactura.id,
+                    cajaAbierta.id,
+                    Number(abonoMonto),
+                    abonoMetodo,
+                    abonoNotas
+                  )
+                  if (res.success) {
+                    toast.success('Abono registrado correctamente')
+                    setPayingAbonoFactura(null)
+                    await fetchVentas()
+                    router.refresh()
+                  } else {
+                    toast.error(res.error || 'Error al registrar abono')
+                  }
+                  setIsSavingAbono(false)
+                }}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl text-xs font-black disabled:opacity-50"
+              >
+                {isSavingAbono ? 'Guardando...' : 'Confirmar Abono'}
               </button>
             </div>
           </div>

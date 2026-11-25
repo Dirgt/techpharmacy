@@ -29,7 +29,7 @@ export default async function PrintFacturaPage({ params }: { params: Promise<{ i
       .eq('factura_id', factura.id),
     supabase
       .from('droguerias')
-      .select('id, nombre, nit, direccion, telefono, regimen')
+      .select('id, nombre, nit, direccion, telefono, regimen, mensaje_pie_factura')
       .eq('id', factura.drogueria_id)
       .single(),
   ])

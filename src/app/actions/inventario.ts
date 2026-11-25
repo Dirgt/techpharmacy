@@ -3,23 +3,35 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { UpsertInventarioSchema, UpsertInventarioInput } from '@/lib/validations/inventario.schema'
+import { requireAdmin } from '@/lib/auth/session'
+import type { CsvInventarioRow } from '@/lib/inventario/csv-import'
 
 /**
  * Obtiene el inventario completo con datos de productos y laboratorios
  */
 export async function getInventario() {
   const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('vista_inventario_completo')
-    .select('*')
-    .order('nombre_producto', { ascending: true })
+  const [{ data, error }, { data: productosFormula }] = await Promise.all([
+    supabase
+      .from('vista_inventario_completo')
+      .select('*')
+      .order('nombre_producto', { ascending: true }),
+    supabase.from('productos').select('id, requiere_formula'),
+  ])
 
   if (error) {
     console.error('Error fetching inventory:', JSON.stringify(error, null, 2))
     return []
   }
 
-  return data
+  const formulaMap = new Map(
+    (productosFormula || []).map((p) => [p.id, Boolean(p.requiere_formula)])
+  )
+
+  return (data || []).map((item) => ({
+    ...item,
+    requiere_formula: item.producto_id ? formulaMap.get(item.producto_id) ?? false : false,
+  }))
 }
 
 export async function getProductos() {
@@ -152,8 +164,169 @@ export async function upsertInventario(rawData: UpsertInventarioInput) {
     return { success: false, error: error.message }
   }
 
+  const upsertedObj =
+    typeof upserted === 'object' && upserted !== null ? (upserted as { producto_id?: string }) : null
+  const finalProdId = data.producto_id || upsertedObj?.producto_id
+  if (finalProdId) {
+    await supabase
+      .from('productos')
+      .update({ requiere_formula: Boolean(data.requiere_formula) })
+      .eq('id', finalProdId)
+  }
+
   // Refrescar toda la aplicación para que el módulo de Facturación (POS) tenga el stock más reciente
   revalidatePath('/', 'layout')
   
   return { success: true, data: upserted }
+}
+
+export async function importarInventarioMasivo(rows: CsvInventarioRow[]): Promise<{
+  success: boolean
+  importados: number
+  fallidos: number
+  errores: string[]
+}> {
+  const auth = await requireAdmin()
+  if (!auth.ok) {
+    return { success: false, importados: 0, fallidos: 0, errores: [auth.error] }
+  }
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return {
+      success: false,
+      importados: 0,
+      fallidos: 0,
+      errores: ['No hay filas válidas para importar.'],
+    }
+  }
+
+  if (rows.length > 500) {
+    return {
+      success: false,
+      importados: 0,
+      fallidos: 0,
+      errores: ['El límite por importación es de 500 productos. Divide el archivo en lotes.'],
+    }
+  }
+
+  const supabase = await createClient()
+  const { data: existingLabs } = await supabase.from('laboratorios').select('id, nombre')
+  const labMap = new Map<string, string>(
+    (existingLabs || []).map((l) => [l.nombre.trim().toUpperCase(), l.id])
+  )
+
+  let importados = 0
+  let fallidos = 0
+  const errores: string[] = []
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]
+    let laboratorioId: string | undefined
+
+    if (row.laboratorio) {
+      const labKey = row.laboratorio.trim().toUpperCase()
+      laboratorioId = labMap.get(labKey)
+      if (!laboratorioId) {
+        const createdLab = await createLaboratorio(row.laboratorio)
+        if (createdLab.success && createdLab.data) {
+          laboratorioId = createdLab.data.id
+          labMap.set(labKey, createdLab.data.id)
+        }
+      }
+    }
+
+    const bpc = Math.max(1, row.blisters_por_caja || 1)
+    const upb = Math.max(1, row.unidades_por_blister || 1)
+    const precioBlister =
+      row.precio_blister > 0 ? row.precio_blister : Number((row.precio_caja / bpc).toFixed(2))
+    const precioUnidad =
+      row.precio_unidad > 0 ? row.precio_unidad : Number((precioBlister / upb).toFixed(2))
+
+    const validation = UpsertInventarioSchema.safeParse({
+      codigo: row.codigo,
+      nombre: row.nombre,
+      principio_activo: row.principio_activo || '',
+      laboratorio_id: laboratorioId || '',
+      cajas: row.cajas,
+      blisters: row.blisters,
+      unidades: row.unidades,
+      blisters_por_caja: bpc,
+      unidades_por_blister: upb,
+      precio_caja: row.precio_caja,
+      precio_blister: precioBlister,
+      precio_unidad: precioUnidad,
+      porcentaje_ganancia: row.porcentaje_ganancia,
+      margen_blister: row.margen_blister,
+      margen_unidad: row.margen_unidad,
+      lote: row.lote || '',
+      fecha_vencimiento: row.fecha_vencimiento || null,
+      registro_invima: row.registro_invima || '',
+      seccion: row.seccion || '',
+      ubicacion: row.ubicacion || '',
+      stock_minimo: row.stock_minimo,
+    })
+
+    if (!validation.success) {
+      fallidos++
+      if (errores.length < 20) {
+        errores.push(
+          `${row.codigo || row.nombre}: ${validation.error.issues.map((e) => e.message).join(', ')}`
+        )
+      }
+      continue
+    }
+
+    const d = validation.data
+    const { data: upsertedRow, error } = await supabase.rpc('upsert_inventario_tx', {
+      p_blisters: d.blisters,
+      p_blisters_por_caja: d.blisters_por_caja,
+      p_cajas: d.cajas,
+      p_codigo: d.codigo,
+      p_fecha_vencimiento: d.fecha_vencimiento || undefined,
+      p_inventario_id: undefined,
+      p_laboratorio_id: d.laboratorio_id || undefined,
+      p_lote: d.lote || '',
+      p_margen_blister: d.margen_blister,
+      p_margen_unidad: d.margen_unidad,
+      p_nombre: d.nombre,
+      p_porcentaje_ganancia: d.porcentaje_ganancia,
+      p_precio_blister: d.precio_blister,
+      p_precio_caja: d.precio_caja,
+      p_precio_unidad: d.precio_unidad,
+      p_principio_activo: d.principio_activo || '',
+      p_producto_id: undefined,
+      p_registro_invima: d.registro_invima || '',
+      p_seccion: d.seccion || '',
+      p_stock_minimo: d.stock_minimo,
+      p_ubicacion: d.ubicacion || '',
+      p_unidades: d.unidades,
+      p_unidades_por_blister: d.unidades_por_blister,
+    })
+
+    if (error) {
+      fallidos++
+      if (errores.length < 20) {
+        errores.push(`${row.codigo}: ${error.message}`)
+      }
+    } else {
+      const upsertedObj =
+        typeof upsertedRow === 'object' && upsertedRow !== null
+          ? (upsertedRow as { producto_id?: string })
+          : null
+      if (upsertedObj?.producto_id) {
+        await supabase
+          .from('productos')
+          .update({ requiere_formula: Boolean(row.requiere_formula) })
+          .eq('id', upsertedObj.producto_id)
+      }
+      importados++
+    }
+  }
+
+  revalidatePath('/', 'layout')
+  revalidatePath('/inventario')
+  revalidatePath('/facturas')
+  revalidatePath('/dashboard')
+
+  return { success: importados > 0, importados, fallidos, errores }
 }

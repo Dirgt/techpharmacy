@@ -28,7 +28,8 @@ export const UpsertInventarioSchema = z.object({
   registro_invima: z.string().optional().nullable(),
   seccion: z.string().optional().nullable(),
   ubicacion: z.string().optional().nullable(),
-  stock_minimo: z.number().min(0).default(2)
+  stock_minimo: z.number().min(0).default(2),
+  requiere_formula: z.boolean().optional().default(false),
 })
 
 export type UpsertInventarioInput = z.infer<typeof UpsertInventarioSchema>

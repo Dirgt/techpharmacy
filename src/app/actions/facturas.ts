@@ -3,7 +3,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { requireActiveUser } from '@/lib/auth/session'
+import { requireActiveUser, requireAdmin } from '@/lib/auth/session'
 
 export type FacturaItem = {
   producto_id: string
@@ -104,17 +104,27 @@ export async function getFacturas() {
 
 export async function getInventarioPOS() {
   const supabase = await createClient()
-  // Usamos vista_inventario_completo para tener los nombres, laboratorios y precios actualizados
-  const { data, error } = await supabase
-    .from('vista_inventario_completo' as any)
-    .select('*')
-    .order('nombre_producto', { ascending: true })
-    
+  const [{ data, error }, { data: productosFormula }] = await Promise.all([
+    supabase
+      .from('vista_inventario_completo' as any)
+      .select('*')
+      .order('nombre_producto', { ascending: true }),
+    supabase.from('productos').select('id, requiere_formula'),
+  ])
+
   if (error) {
     console.error('Error fetching inventario para POS:', error)
     return []
   }
-  return data
+
+  const formulaMap = new Map(
+    (productosFormula || []).map((p) => [p.id, Boolean(p.requiere_formula)])
+  )
+
+  return ((data || []) as any[]).map((item) => ({
+    ...item,
+    requiere_formula: item.producto_id ? formulaMap.get(item.producto_id) ?? false : false,
+  }))
 }
 
 export async function getVendedores() {
@@ -159,14 +169,101 @@ export async function marcarComoPagada(facturaId: string, cajaSesionId: string, 
 
 export async function getCartera() {
   const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('vista_cartera' as any)
-    .select('*')
-    .order('fecha_vencimiento', { ascending: true })
+  const [{ data, error }, { data: pendientes }] = await Promise.all([
+    supabase
+      .from('vista_cartera' as any)
+      .select('*')
+      .order('fecha_vencimiento', { ascending: true }),
+    supabase
+      .from('facturas')
+      .select('id, monto_abonado, total, estado_pago')
+      .eq('estado_pago', 'pendiente'),
+  ])
 
   if (error) {
     console.error('Error fetching cartera:', error)
     return []
   }
-  return data
+
+  const facturaMap = new Map(
+    (pendientes || []).map((f) => [
+      f.id,
+      {
+        monto_abonado: Number(f.monto_abonado || 0),
+        total: Number(f.total || 0),
+      },
+    ])
+  )
+
+  return ((data || []) as any[])
+    .filter((row) => row.estado_pago === 'pendiente')
+    .map((row) => {
+      const extra = row.id ? facturaMap.get(row.id) : undefined
+      const total = Number(row.total_con_descuento ?? extra?.total ?? row.total ?? 0)
+      const montoAbonado = extra?.monto_abonado ?? 0
+      const saldoPendiente = Math.max(0, total - montoAbonado)
+      return {
+        ...row,
+        monto_abonado: montoAbonado,
+        saldo_pendiente: saldoPendiente,
+      }
+    })
+}
+
+export async function registrarAbonoFactura(
+  facturaId: string,
+  cajaSesionId: string,
+  monto: number,
+  metodoPago: string,
+  notas?: string
+) {
+  const supabase = await createClient()
+  try {
+    const auth = await requireActiveUser()
+    if (!auth.ok) throw new Error(auth.error)
+
+    const { data, error } = await supabase.rpc('registrar_abono_factura_tx', {
+      p_factura_id: facturaId,
+      p_caja_sesion_id: cajaSesionId,
+      p_monto: monto,
+      p_metodo_pago: metodoPago || 'efectivo',
+      p_notas: notas || '',
+    })
+
+    if (error) throw new Error(error.message)
+
+    revalidatePath('/facturas')
+    revalidatePath('/dashboard')
+    revalidatePath('/reportes')
+
+    return { success: true, data }
+  } catch (error: any) {
+    console.error('Error al registrar abono:', error)
+    return { success: false, error: error.message || 'No se pudo registrar el abono' }
+  }
+}
+
+export async function anularFactura(facturaId: string, motivo: string) {
+  const supabase = await createClient()
+  try {
+    const auth = await requireAdmin()
+    if (!auth.ok) throw new Error(auth.error)
+
+    const { data, error } = await supabase.rpc('anular_factura_tx', {
+      p_factura_id: facturaId,
+      p_motivo: motivo.trim(),
+    })
+
+    if (error) throw new Error(error.message)
+
+    revalidatePath('/facturas')
+    revalidatePath('/inventario')
+    revalidatePath('/dashboard')
+    revalidatePath('/reportes')
+
+    return { success: true, data }
+  } catch (error: any) {
+    console.error('Error al anular factura:', error)
+    return { success: false, error: error.message || 'No se pudo anular la factura' }
+  }
 }

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { API_SCOPES } from '../api/api-key-utils.ts'
 
 export const DrogueriaSchema = z.object({
   nombre: z.string().trim().min(2, 'El nombre de la droguería es obligatorio'),
@@ -88,3 +89,22 @@ export const AssignUserSchema = z
   })
 
 export type AssignUserInput = z.infer<typeof AssignUserSchema>
+
+export const CreateApiKeySchema = z.object({
+  drogueria_id: z.string().uuid('Droguería inválida'),
+  nombre: z
+    .string()
+    .trim()
+    .min(2, 'El nombre identificador es obligatorio')
+    .max(100, 'Máximo 100 caracteres'),
+  scopes: z.array(z.enum(API_SCOPES)).min(1, 'Debes seleccionar al menos un permiso'),
+  expires_at: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD)')
+    .nullable()
+    .optional()
+    .or(z.literal('')),
+})
+
+export type CreateApiKeyInput = z.infer<typeof CreateApiKeySchema>

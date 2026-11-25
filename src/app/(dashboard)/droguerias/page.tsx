@@ -25,7 +25,12 @@ export default async function DrogueriasPage({
     )
   }
 
-  const initialTab = params.tab === 'usuarios' ? 'usuarios' : 'droguerias'
+  const initialTab =
+    params.tab === 'usuarios'
+      ? 'usuarios'
+      : params.tab === 'apikeys'
+        ? 'apikeys'
+        : 'droguerias'
 
   return <DrogueriasClient initialData={res.data} initialTab={initialTab} />
 }

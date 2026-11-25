@@ -14,6 +14,56 @@ export type Database = {
   }
   public: {
     Tables: {
+      api_keys: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          drogueria_id: string
+          estado: string
+          expires_at: string | null
+          id: string
+          key_hash: string
+          key_prefix: string
+          last_used_at: string | null
+          nombre: string
+          scopes: string[]
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          drogueria_id: string
+          estado?: string
+          expires_at?: string | null
+          id?: string
+          key_hash: string
+          key_prefix: string
+          last_used_at?: string | null
+          nombre: string
+          scopes?: string[]
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          drogueria_id?: string
+          estado?: string
+          expires_at?: string | null
+          id?: string
+          key_hash?: string
+          key_prefix?: string
+          last_used_at?: string | null
+          nombre?: string
+          scopes?: string[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "api_keys_drogueria_id_fkey"
+            columns: ["drogueria_id"]
+            isOneToOne: false
+            referencedRelation: "droguerias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       auditoria_inventario: {
         Row: {
           accion: string
@@ -78,6 +128,8 @@ export type Database = {
       caja_sesiones: {
         Row: {
           abierto_por: string
+          cerrado_por: string | null
+          diferencia: number | null
           drogueria_id: string
           estado: string | null
           fecha_apertura: string | null
@@ -85,9 +137,12 @@ export type Database = {
           id: string
           monto_apertura: number
           monto_cierre: number | null
+          monto_esperado: number | null
         }
         Insert: {
           abierto_por: string
+          cerrado_por?: string | null
+          diferencia?: number | null
           drogueria_id?: string
           estado?: string | null
           fecha_apertura?: string | null
@@ -95,9 +150,12 @@ export type Database = {
           id?: string
           monto_apertura: number
           monto_cierre?: number | null
+          monto_esperado?: number | null
         }
         Update: {
           abierto_por?: string
+          cerrado_por?: string | null
+          diferencia?: number | null
           drogueria_id?: string
           estado?: string | null
           fecha_apertura?: string | null
@@ -105,6 +163,7 @@ export type Database = {
           id?: string
           monto_apertura?: number
           monto_cierre?: number | null
+          monto_esperado?: number | null
         }
         Relationships: [
           {
@@ -358,6 +417,7 @@ export type Database = {
           fecha_vencimiento: string | null
           id: string
           max_usuarios: number
+          mensaje_pie_factura: string | null
           motivo_suspension: string | null
           nit: string | null
           nombre: string
@@ -374,6 +434,7 @@ export type Database = {
           fecha_vencimiento?: string | null
           id?: string
           max_usuarios?: number
+          mensaje_pie_factura?: string | null
           motivo_suspension?: string | null
           nit?: string | null
           nombre: string
@@ -390,6 +451,7 @@ export type Database = {
           fecha_vencimiento?: string | null
           id?: string
           max_usuarios?: number
+          mensaje_pie_factura?: string | null
           motivo_suspension?: string | null
           nit?: string | null
           nombre?: string
@@ -400,6 +462,71 @@ export type Database = {
           url_personalizada?: string | null
         }
         Relationships: []
+      }
+      factura_abonos: {
+        Row: {
+          caja_sesion_id: string | null
+          created_at: string
+          drogueria_id: string
+          factura_id: string
+          id: string
+          metodo_pago: string
+          monto: number
+          notas: string | null
+          registrado_por: string | null
+        }
+        Insert: {
+          caja_sesion_id?: string | null
+          created_at?: string
+          drogueria_id: string
+          factura_id: string
+          id?: string
+          metodo_pago?: string
+          monto: number
+          notas?: string | null
+          registrado_por?: string | null
+        }
+        Update: {
+          caja_sesion_id?: string | null
+          created_at?: string
+          drogueria_id?: string
+          factura_id?: string
+          id?: string
+          metodo_pago?: string
+          monto?: number
+          notas?: string | null
+          registrado_por?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "factura_abonos_caja_sesion_id_fkey"
+            columns: ["caja_sesion_id"]
+            isOneToOne: false
+            referencedRelation: "caja_sesiones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "factura_abonos_drogueria_id_fkey"
+            columns: ["drogueria_id"]
+            isOneToOne: false
+            referencedRelation: "droguerias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "factura_abonos_factura_id_fkey"
+            columns: ["factura_id"]
+            isOneToOne: false
+            referencedRelation: "facturas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "factura_abonos_factura_id_fkey"
+            columns: ["factura_id"]
+            isOneToOne: false
+            referencedRelation: "vista_cartera"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       factura_detalles: {
         Row: {
@@ -472,6 +599,8 @@ export type Database = {
       }
       facturas: {
         Row: {
+          anulada_at: string | null
+          anulada_por: string | null
           caja_sesion_id: string | null
           cliente_documento: string | null
           cliente_nombre: string | null
@@ -486,6 +615,8 @@ export type Database = {
           iva_porcentaje: number | null
           iva_total: number | null
           metodo_pago: string | null
+          monto_abonado: number
+          motivo_anulacion: string | null
           numero: number
           orden_compra: string | null
           subtotal_bruto: number | null
@@ -494,6 +625,8 @@ export type Database = {
           vendedor_id: string
         }
         Insert: {
+          anulada_at?: string | null
+          anulada_por?: string | null
           caja_sesion_id?: string | null
           cliente_documento?: string | null
           cliente_nombre?: string | null
@@ -508,6 +641,8 @@ export type Database = {
           iva_porcentaje?: number | null
           iva_total?: number | null
           metodo_pago?: string | null
+          monto_abonado?: number
+          motivo_anulacion?: string | null
           numero?: number
           orden_compra?: string | null
           subtotal_bruto?: number | null
@@ -516,6 +651,8 @@ export type Database = {
           vendedor_id: string
         }
         Update: {
+          anulada_at?: string | null
+          anulada_por?: string | null
           caja_sesion_id?: string | null
           cliente_documento?: string | null
           cliente_nombre?: string | null
@@ -530,6 +667,8 @@ export type Database = {
           iva_porcentaje?: number | null
           iva_total?: number | null
           metodo_pago?: string | null
+          monto_abonado?: number
+          motivo_anulacion?: string | null
           numero?: number
           orden_compra?: string | null
           subtotal_bruto?: number | null
@@ -796,6 +935,7 @@ export type Database = {
           laboratorio_id: string | null
           nombre: string
           principio_activo: string | null
+          requiere_formula: boolean
           updated_at: string | null
         }
         Insert: {
@@ -807,6 +947,7 @@ export type Database = {
           laboratorio_id?: string | null
           nombre: string
           principio_activo?: string | null
+          requiere_formula?: boolean
           updated_at?: string | null
         }
         Update: {
@@ -818,6 +959,7 @@ export type Database = {
           laboratorio_id?: string | null
           nombre?: string
           principio_activo?: string | null
+          requiere_formula?: boolean
           updated_at?: string | null
         }
         Relationships: [
@@ -986,6 +1128,24 @@ export type Database = {
       }
     }
     Functions: {
+      actualizar_datos_fiscales_sede: {
+        Args: {
+          p_direccion?: string
+          p_mensaje_pie?: string
+          p_nit?: string
+          p_regimen?: string
+          p_telefono?: string
+        }
+        Returns: Json
+      }
+      anular_factura_tx: {
+        Args: { p_factura_id: string; p_motivo?: string }
+        Returns: Json
+      }
+      cerrar_caja_tx: {
+        Args: { p_caja_id: string; p_monto_cierre: number }
+        Returns: Json
+      }
       crear_factura_tx: {
         Args: {
           p_caja_sesion_id: string
@@ -1013,6 +1173,24 @@ export type Database = {
           nombre: string
           subdominio: string
         }[]
+      }
+      pagar_compra_tx: {
+        Args: {
+          p_caja_sesion_id?: string
+          p_compra_id: string
+          p_metodo_pago?: string
+        }
+        Returns: Json
+      }
+      registrar_abono_factura_tx: {
+        Args: {
+          p_caja_sesion_id: string
+          p_factura_id: string
+          p_metodo_pago?: string
+          p_monto: number
+          p_notas?: string
+        }
+        Returns: Json
       }
       registrar_compra_tx: {
         Args: {

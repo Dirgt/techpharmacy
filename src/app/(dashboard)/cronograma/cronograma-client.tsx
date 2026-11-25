@@ -324,7 +324,7 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
                 <Plus className="h-6 w-6" /> Nuevo Turno
               </Button>
             </DialogTrigger>
-            <DialogContent className="bg-white border-none shadow-2xl rounded-[2.5rem] p-10 max-w-md outline-none">
+            <DialogContent className="bg-white border-none shadow-2xl rounded-[2.5rem] p-6 sm:p-8 max-w-md max-h-[90vh] overflow-y-auto outline-none">
               <DialogHeader>
                 <DialogTitle className="text-3xl font-black text-slate-900">Programar Turno</DialogTitle>
                 <DialogDescription className="text-slate-500 font-bold">Asignación de responsabilidad horaria.</DialogDescription>
@@ -597,7 +597,7 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
       </div>
 
       <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
-        <DialogContent className="bg-white border-none shadow-2xl rounded-[3rem] p-0 max-w-2xl overflow-hidden outline-none no-print">
+        <DialogContent className="bg-white border-none shadow-2xl rounded-[3rem] p-0 max-w-2xl max-h-[90vh] overflow-y-auto outline-none no-print">
           {selectedTurno && (
             <div className="flex flex-col">
               <div className={cn("p-12 text-white relative overflow-hidden transition-colors duration-500",

@@ -90,7 +90,6 @@ export async function registrarGasto(input: GastoInput) {
     const validated = GastoSchema.parse(input)
     const supabase = await createClient()
 
-    // Llamamos al RPC para asegurar la validez de la caja
     const { data, error } = await supabase.rpc('registrar_gasto_tx', {
       p_caja_sesion_id: validated.caja_sesion_id,
       p_concepto: validated.concepto,
@@ -100,8 +99,7 @@ export async function registrarGasto(input: GastoInput) {
     })
 
     if (error) return { success: false, error: error.message }
-    
-    // Invalidamos facturación porque ahí se muestra la caja y gastos
+
     revalidatePath('/facturas')
     revalidatePath('/reportes')
     return { success: true, data }
@@ -118,7 +116,6 @@ export async function registrarCompra(input: CompraInput) {
     const validated = CompraSchema.parse(input)
     const supabase = await createClient()
 
-    // Map para coincidir con el Composite Type "compra_detalle_input" de Postgres
     const detalles_rpc = validated.detalles.map(d => ({
       producto_id: d.producto_id,
       cantidad: d.cantidad,
@@ -137,16 +134,46 @@ export async function registrarCompra(input: CompraInput) {
     })
 
     if (error) return { success: false, error: error.message }
-    
+
     revalidatePath('/compras')
     revalidatePath('/inventario')
     if (validated.estado_pago === 'pagado' && validated.metodo_pago === 'efectivo') {
       revalidatePath('/facturas')
       revalidatePath('/reportes')
     }
-    
+
     return { success: true, data }
   } catch (error: unknown) {
     return { success: false, error: error instanceof Error ? error.message : 'Error de validación' }
+  }
+}
+
+export async function pagarCompraProveedor(
+  compraId: string,
+  metodoPago: 'efectivo' | 'transferencia' | 'tarjeta',
+  cajaSesionId?: string | null
+) {
+  try {
+    const auth = await requireAdmin()
+    if (!auth.ok) return { success: false, error: auth.error }
+
+    const supabase = await createClient()
+    const { data, error } = await supabase.rpc('pagar_compra_tx', {
+      p_compra_id: compraId,
+      p_metodo_pago: metodoPago,
+      p_caja_sesion_id: metodoPago === 'efectivo' ? (cajaSesionId || undefined) : undefined,
+    })
+
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath('/compras')
+    revalidatePath('/facturas')
+    revalidatePath('/reportes')
+    return { success: true, data }
+  } catch (error: unknown) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Error al pagar la compra',
+    }
   }
 }

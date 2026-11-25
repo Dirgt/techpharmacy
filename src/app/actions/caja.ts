@@ -55,14 +55,10 @@ export async function abrirCaja(montoApertura: number) {
 
 export async function cerrarCaja(cajaId: string, montoCierre: number) {
   const supabase = await createClient()
-  const { error } = await supabase
-    .from('caja_sesiones')
-    .update({
-      estado: 'cerrada',
-      monto_cierre: montoCierre,
-      fecha_cierre: new Date().toISOString()
-    })
-    .eq('id', cajaId)
+  const { data, error } = await supabase.rpc('cerrar_caja_tx', {
+    p_caja_id: cajaId,
+    p_monto_cierre: montoCierre,
+  })
 
   if (error) {
     return { success: false, error: error.message }
@@ -71,5 +67,5 @@ export async function cerrarCaja(cajaId: string, montoCierre: number) {
   revalidatePath('/facturas')
   revalidatePath('/compras')
   revalidatePath('/reportes')
-  return { success: true }
+  return { success: true, data }
 }

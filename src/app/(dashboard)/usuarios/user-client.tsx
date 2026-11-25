@@ -140,7 +140,7 @@ export function UserClient({ initialUsers }: UserClientProps) {
               Nuevo Usuario
             </Button>
           </DialogTrigger>
-          <DialogContent className="bg-white border-0 text-slate-900 sm:max-w-xl md:max-w-3xl rounded-[2rem] p-0 shadow-2xl overflow-hidden">
+          <DialogContent className="bg-white border-0 text-slate-900 sm:max-w-xl md:max-w-3xl max-h-[90vh] overflow-y-auto rounded-[2rem] p-0 shadow-2xl">
             <div className="flex flex-col md:flex-row h-full">
               {/* Sidebar Header */}
               <div className="bg-slate-900 p-8 md:w-1/3 flex flex-col justify-between relative overflow-hidden">
@@ -284,7 +284,7 @@ export function UserClient({ initialUsers }: UserClientProps) {
       </Card>
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="bg-white border-slate-200 text-slate-900 max-w-md rounded-3xl p-8 shadow-2xl">
+        <DialogContent className="bg-white border-slate-200 text-slate-900 max-w-md max-h-[90vh] overflow-y-auto rounded-3xl p-6 sm:p-8 shadow-2xl">
           <DialogHeader>
             <DialogTitle className="text-2xl font-black">Editar Perfil</DialogTitle>
             <DialogDescription className="text-slate-500 font-medium">
@@ -344,7 +344,7 @@ export function UserClient({ initialUsers }: UserClientProps) {
         </DialogContent>
       </Dialog>
       <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
-        <DialogContent className="bg-white border-slate-200 text-slate-900 max-w-md rounded-3xl p-8 shadow-2xl">
+        <DialogContent className="bg-white border-slate-200 text-slate-900 max-w-md max-h-[90vh] overflow-y-auto rounded-3xl p-6 sm:p-8 shadow-2xl">
           <DialogHeader>
             <DialogTitle className="text-2xl font-black flex items-center">
               <Settings className="w-6 h-6 mr-2 text-slate-700" />

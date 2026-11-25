@@ -17,6 +17,7 @@ import {
   LineChart,
   Settings,
   Building2,
+  KeyRound,
 } from 'lucide-react'
 import { logout } from '@/app/actions/auth'
 
@@ -34,7 +35,16 @@ const tenantNavigation = [
 const superAdminNavigation = [
   { name: 'Droguerías y Uso', href: '/droguerias', tab: 'droguerias', icon: Building2 },
   { name: 'Usuarios Globales', href: '/droguerias?tab=usuarios', tab: 'usuarios', icon: Users },
-]
+  { name: 'API Keys', href: '/droguerias?tab=apikeys', tab: 'apikeys', icon: KeyRound },
+] as const
+
+type SuperAdminTab = 'droguerias' | 'usuarios' | 'apikeys'
+
+function parseSuperAdminTab(raw: string | null): SuperAdminTab {
+  if (raw === 'usuarios') return 'usuarios'
+  if (raw === 'apikeys') return 'apikeys'
+  return 'droguerias'
+}
 
 function SidebarInner({
   role,
@@ -49,10 +59,9 @@ function SidebarInner({
   const searchParams = useSearchParams()
   const isSuperAdmin = role === 'superadmin'
   const isAdmin = role === 'admin'
-  const urlTab: 'droguerias' | 'usuarios' =
-    searchParams.get('tab') === 'usuarios' ? 'usuarios' : 'droguerias'
-  const [clientTab, setClientTab] = useState<'droguerias' | 'usuarios'>(urlTab)
-  const [prevUrlTab, setPrevUrlTab] = useState<'droguerias' | 'usuarios'>(urlTab)
+  const urlTab = parseSuperAdminTab(searchParams.get('tab'))
+  const [clientTab, setClientTab] = useState<SuperAdminTab>(urlTab)
+  const [prevUrlTab, setPrevUrlTab] = useState<SuperAdminTab>(urlTab)
 
   if (urlTab !== prevUrlTab) {
     setPrevUrlTab(urlTab)
@@ -62,7 +71,7 @@ function SidebarInner({
   useEffect(() => {
     const handleTabChange = (event: Event) => {
       const detail = (event as CustomEvent<string>).detail
-      if (detail === 'droguerias' || detail === 'usuarios') {
+      if (detail === 'droguerias' || detail === 'usuarios' || detail === 'apikeys') {
         setClientTab(detail)
       }
     }
@@ -125,7 +134,7 @@ function SidebarInner({
                     if (pathname === '/droguerias') {
                       e.preventDefault()
                       window.history.replaceState(null, '', item.href)
-                      setClientTab(item.tab as 'droguerias' | 'usuarios')
+                      setClientTab(item.tab)
                       window.dispatchEvent(
                         new CustomEvent('droguerias-tab-change', { detail: item.tab })
                       )

@@ -39,6 +39,10 @@ export function invalidateMiddlewareProfileCache(userId?: string) {
 }
 
 export async function updateSession(request: NextRequest) {
+  if (request.nextUrl.pathname.startsWith('/api/v1')) {
+    return NextResponse.next({ request })
+  }
+
   let supabaseResponse = NextResponse.next({
     request,
   })

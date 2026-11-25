@@ -25,6 +25,8 @@ import {
   Ban,
   CheckCircle2,
   Crown,
+  KeyRound,
+  Terminal,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -52,27 +54,36 @@ import {
   TenantStatus,
 } from '@/lib/tenant/domain'
 import {
+  API_SCOPE_LABELS,
+  API_SCOPES,
+  ApiScope,
+} from '@/lib/api/api-key-utils'
+import {
   assignUserDrogueriaAndRole,
+  createApiKeyForDrogueria,
   createDrogueria,
   createUserForDrogueria,
   DrogueriaOverview,
   PlatformOverviewData,
   PlatformUserOverview,
+  revokeApiKey,
   toggleDrogueriaStatus,
   updateDrogueria,
 } from '@/app/actions/superadmin'
+
+type SuperAdminTab = 'droguerias' | 'usuarios' | 'apikeys'
 
 export function DrogueriasClient({
   initialData,
   initialTab = 'droguerias',
 }: {
   initialData: PlatformOverviewData
-  initialTab?: 'droguerias' | 'usuarios'
+  initialTab?: SuperAdminTab
 }) {
   const router = useRouter()
   const data = initialData
-  const [activeTab, setActiveTab] = useState<'droguerias' | 'usuarios'>(initialTab)
-  const [prevInitialTab, setPrevInitialTab] = useState<'droguerias' | 'usuarios'>(initialTab)
+  const [activeTab, setActiveTab] = useState<SuperAdminTab>(initialTab)
+  const [prevInitialTab, setPrevInitialTab] = useState<SuperAdminTab>(initialTab)
 
   if (initialTab !== prevInitialTab) {
     setPrevInitialTab(initialTab)
@@ -82,7 +93,7 @@ export function DrogueriasClient({
   useEffect(() => {
     const handleTabChange = (event: Event) => {
       const detail = (event as CustomEvent<string>).detail
-      if (detail === 'droguerias' || detail === 'usuarios') {
+      if (detail === 'droguerias' || detail === 'usuarios' || detail === 'apikeys') {
         setActiveTab(detail)
       }
     }
@@ -90,9 +101,14 @@ export function DrogueriasClient({
     return () => window.removeEventListener('droguerias-tab-change', handleTabChange)
   }, [])
 
-  const switchTab = (tab: 'droguerias' | 'usuarios') => {
+  const switchTab = (tab: SuperAdminTab) => {
     setActiveTab(tab)
-    const targetUrl = tab === 'usuarios' ? '/droguerias?tab=usuarios' : '/droguerias'
+    const targetUrl =
+      tab === 'usuarios'
+        ? '/droguerias?tab=usuarios'
+        : tab === 'apikeys'
+          ? '/droguerias?tab=apikeys'
+          : '/droguerias'
     window.history.replaceState(null, '', targetUrl)
     window.dispatchEvent(new CustomEvent('droguerias-tab-change', { detail: tab }))
   }
@@ -123,6 +139,22 @@ export function DrogueriasClient({
   const [suspendingDrogueria, setSuspendingDrogueria] = useState<DrogueriaOverview | null>(null)
   const [suspensionReason, setSuspensionReason] = useState('')
   const [togglingStatusId, setTogglingStatusId] = useState<string | null>(null)
+
+  // Modal API Key (crear / revelar)
+  const [isNewApiKeyOpen, setIsNewApiKeyOpen] = useState(false)
+  const [savingApiKey, setSavingApiKey] = useState(false)
+  const [revokingKeyId, setRevokingKeyId] = useState<string | null>(null)
+  const [apiKeyForm, setApiKeyForm] = useState({
+    drogueria_id: '',
+    nombre: '',
+    scopes: ['read:productos', 'read:inventario', 'read:facturas', 'read:clientes'] as ApiScope[],
+    expires_at: '',
+  })
+  const [revealedKeyModal, setRevealedKeyModal] = useState<{
+    rawKey: string
+    nombre: string
+    drogueriaNombre: string
+  } | null>(null)
 
   // Modal Crear Usuario en Droguería
   const [isNewUserOpen, setIsNewUserOpen] = useState(false)
@@ -374,13 +406,72 @@ export function DrogueriasClient({
     setSavingAssign(false)
   }
 
-  const copyUrl = async (url: string) => {
+  const copyUrl = async (url: string, label = 'URL copiada al portapapeles') => {
     try {
       await navigator.clipboard.writeText(url)
-      toast.success('URL copiada al portapapeles')
+      toast.success(label)
     } catch {
-      toast.error('No se pudo copiar la URL')
+      toast.error('No se pudo copiar al portapapeles')
     }
+  }
+
+  const openCreateApiKey = () => {
+    setApiKeyForm({
+      drogueria_id: data.droguerias[0]?.id || '',
+      nombre: '',
+      scopes: ['read:productos', 'read:inventario', 'read:facturas', 'read:clientes'],
+      expires_at: '',
+    })
+    setIsNewApiKeyOpen(true)
+  }
+
+  const toggleScope = (scope: ApiScope) => {
+    setApiKeyForm((prev) => {
+      const exists = prev.scopes.includes(scope)
+      return {
+        ...prev,
+        scopes: exists ? prev.scopes.filter((s) => s !== scope) : [...prev.scopes, scope],
+      }
+    })
+  }
+
+  const handleCreateApiKey = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSavingApiKey(true)
+    const res = await createApiKeyForDrogueria({
+      drogueria_id: apiKeyForm.drogueria_id,
+      nombre: apiKeyForm.nombre,
+      scopes: apiKeyForm.scopes,
+      expires_at: apiKeyForm.expires_at || null,
+    })
+
+    if (res.success && res.rawKey) {
+      const drogueriaNombre =
+        data.droguerias.find((d) => d.id === apiKeyForm.drogueria_id)?.nombre || 'Droguería'
+      setIsNewApiKeyOpen(false)
+      setRevealedKeyModal({
+        rawKey: res.rawKey,
+        nombre: apiKeyForm.nombre,
+        drogueriaNombre,
+      })
+      toast.success('API Key generada correctamente')
+      router.refresh()
+    } else {
+      toast.error(res.error || 'No se pudo generar la API Key')
+    }
+    setSavingApiKey(false)
+  }
+
+  const handleRevokeApiKey = async (id: string) => {
+    setRevokingKeyId(id)
+    const res = await revokeApiKey(id)
+    if (res.success) {
+      toast.success('API Key revocada')
+      router.refresh()
+    } else {
+      toast.error(res.error || 'No se pudo revocar la API Key')
+    }
+    setRevokingKeyId(null)
   }
 
   const { resumenGlobal } = data
@@ -483,7 +574,7 @@ export function DrogueriasClient({
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-slate-200 pb-1">
+      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-1">
         <button
           onClick={() => switchTab('droguerias')}
           className={`px-4 py-2.5 text-sm font-black rounded-t-xl border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'droguerias'
@@ -503,6 +594,16 @@ export function DrogueriasClient({
         >
           <Users className="h-4 w-4" />
           Usuarios de la Plataforma ({data.usuarios.length})
+        </button>
+        <button
+          onClick={() => switchTab('apikeys')}
+          className={`px-4 py-2.5 text-sm font-black rounded-t-xl border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'apikeys'
+            ? 'border-indigo-600 text-indigo-700 bg-white'
+            : 'border-transparent text-slate-500 hover:text-slate-900'
+            }`}
+        >
+          <KeyRound className="h-4 w-4" />
+          API Keys & Integraciones ({data.apiKeys.length})
         </button>
       </div>
 
@@ -830,7 +931,7 @@ export function DrogueriasClient({
             })}
           </div>
         </div>
-      ) : (
+      ) : activeTab === 'usuarios' ? (
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1 max-w-md">
@@ -932,6 +1033,122 @@ export function DrogueriasClient({
                     <tr>
                       <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-bold">
                         No se encontraron usuarios.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+            <div className="space-y-1">
+              <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
+                <Terminal className="h-4 w-4 text-indigo-600" />
+                API REST Pública v1 (120 req/min por llave)
+              </h2>
+              <p className="text-xs text-slate-500 font-medium">
+                Conecta ERPs, contabilidad o ecommerce usando{' '}
+                <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">
+                  Authorization: Bearer tp_live_...
+                </code>{' '}
+                o consulta la especificación{' '}
+                <a
+                  href="/api/v1/openapi"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-indigo-600 font-bold underline hover:text-indigo-700"
+                >
+                  OpenAPI 3.1 JSON
+                </a>
+                .
+              </p>
+            </div>
+            <Button
+              onClick={openCreateApiKey}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shrink-0"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Nueva API Key
+            </Button>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-slate-50 border-b border-slate-100 text-[11px] font-black text-slate-400 uppercase tracking-wider">
+                  <tr>
+                    <th className="px-6 py-4">Integración / Prefijo</th>
+                    <th className="px-6 py-4">Droguería</th>
+                    <th className="px-6 py-4">Permisos (Scopes)</th>
+                    <th className="px-6 py-4">Último Uso</th>
+                    <th className="px-6 py-4">Estado</th>
+                    <th className="px-6 py-4 text-right">Acción</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {data.apiKeys.map((k) => (
+                    <tr key={k.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="px-6 py-4">
+                        <p className="font-bold text-slate-900">{k.nombre}</p>
+                        <p className="text-xs font-mono text-slate-500">{k.key_prefix}••••••••</p>
+                      </td>
+                      <td className="px-6 py-4 font-bold text-slate-700">{k.drogueria_nombre}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-wrap gap-1">
+                          {k.scopes.map((sc) => (
+                            <span
+                              key={sc}
+                              className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold"
+                            >
+                              {sc}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-xs text-slate-500 font-medium">
+                        {k.last_used_at ? new Date(k.last_used_at).toLocaleString() : 'Sin uso'}
+                        {k.expires_at && (
+                          <span className="block text-[10px] text-slate-400">
+                            Expira: {k.expires_at.slice(0, 10)}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
+                            k.estado === 'activa'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-rose-100 text-rose-700'
+                          }`}
+                        >
+                          {k.estado}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        {k.estado === 'activa' ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={revokingKeyId === k.id}
+                            onClick={() => handleRevokeApiKey(k.id)}
+                            className="rounded-xl text-xs font-bold text-rose-700 border-rose-200 hover:bg-rose-50"
+                          >
+                            <Ban className="h-3.5 w-3.5 mr-1.5" />
+                            {revokingKeyId === k.id ? 'Revocando...' : 'Revocar'}
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-slate-400 font-semibold">Revocada</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {data.apiKeys.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-bold">
+                        No hay API Keys generadas todavía. Crea una para integrar sistemas externos.
                       </td>
                     </tr>
                   )}
@@ -1402,6 +1619,177 @@ export function DrogueriasClient({
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Crear API Key */}
+      <Dialog open={isNewApiKeyOpen} onOpenChange={setIsNewApiKeyOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Generar Nueva API Key</DialogTitle>
+            <DialogDescription>
+              Emite una llave de acceso REST aislada por droguería con permisos específicos.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleCreateApiKey} className="space-y-4 mt-2">
+            <div className="space-y-1.5">
+              <Label>Droguería *</Label>
+              <Select
+                value={apiKeyForm.drogueria_id}
+                onValueChange={(v) => setApiKeyForm({ ...apiKeyForm, drogueria_id: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona una droguería" />
+                </SelectTrigger>
+                <SelectContent>
+                  {data.droguerias.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>
+                      {d.nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Nombre de la Integración *</Label>
+              <Input
+                required
+                value={apiKeyForm.nombre}
+                onChange={(e) => setApiKeyForm({ ...apiKeyForm, nombre: e.target.value })}
+                placeholder="Ej. ERP Contable / Tienda Web"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Permisos (Scopes) *</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {API_SCOPES.map((scope) => {
+                  const checked = apiKeyForm.scopes.includes(scope)
+                  return (
+                    <label
+                      key={scope}
+                      className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold cursor-pointer transition-colors ${
+                        checked
+                          ? 'border-indigo-300 bg-indigo-50 text-indigo-800'
+                          : 'border-slate-200 bg-white text-slate-600'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleScope(scope)}
+                        className="accent-indigo-600"
+                      />
+                      <span>{API_SCOPE_LABELS[scope]}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Fecha de Expiración (opcional)</Label>
+              <Input
+                type="date"
+                value={apiKeyForm.expires_at}
+                onChange={(e) => setApiKeyForm({ ...apiKeyForm, expires_at: e.target.value })}
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setIsNewApiKeyOpen(false)}>
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={savingApiKey || apiKeyForm.scopes.length === 0}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white"
+              >
+                {savingApiKey ? 'Generando...' : 'Generar API Key'}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Revelación Única de API Key */}
+      <Dialog
+        open={!!revealedKeyModal}
+        onOpenChange={(open) => {
+          if (!open) setRevealedKeyModal(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Guarda tu API Key ahora</DialogTitle>
+            <DialogDescription>
+              Por seguridad, esta llave secreta para{' '}
+              <strong>{revealedKeyModal?.drogueriaNombre}</strong> solo se muestra una única vez.
+            </DialogDescription>
+          </DialogHeader>
+          {revealedKeyModal && (
+            <div className="space-y-4 mt-2">
+              <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs font-semibold text-amber-800 flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>
+                  Cópiala y guárdala en un gestor seguro. Solo almacenamos su hash SHA-256.
+                </span>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>API Key ({revealedKeyModal.nombre})</Label>
+                <div className="flex gap-2">
+                  <Input
+                    readOnly
+                    value={revealedKeyModal.rawKey}
+                    className="font-mono text-xs bg-slate-50"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => copyUrl(revealedKeyModal.rawKey, 'API Key copiada')}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Ejemplo rápido de uso (cURL)</Label>
+                <div className="relative rounded-xl bg-slate-950 p-3 text-[11px] font-mono text-slate-200 overflow-x-auto">
+                  <code>
+                    {`curl -H "Authorization: Bearer ${revealedKeyModal.rawKey}" "${
+                      typeof window !== 'undefined' ? window.location.origin : 'https://farmaliados.vercel.app'
+                    }/api/v1/productos"`}
+                  </code>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    copyUrl(
+                      `curl -H "Authorization: Bearer ${revealedKeyModal.rawKey}" "${window.location.origin}/api/v1/productos"`,
+                      'Comando cURL copiado'
+                    )
+                  }
+                >
+                  <Copy className="h-3.5 w-3.5 mr-1.5" />
+                  Copiar cURL
+                </Button>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <Button
+                  onClick={() => setRevealedKeyModal(null)}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                >
+                  Entendido, ya la guardé
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
