@@ -9,7 +9,7 @@ Bienvenido a **TechPharmacy**, la plataforma en la nube diseñada específicamen
 Cada droguería cuenta con su propio portal web exclusivo (por ejemplo: `https://midrogueria.vercel.app` o dominio propio).
 
 1. Ingresa al enlace exclusivo de tu droguería. Verás el nombre de tu sede en la pantalla de inicio de sesión.
-2. Escribe tu **Correo Electrónico** y **Contraseña**.
+2. Escribe tu **Correo Electrónico** y **Contraseña** (puedes pulsar el ícono del ojo para verificar lo que escribiste antes de entrar).
 3. Por seguridad multi-sucursal, una cuenta operativa solo puede iniciar sesión desde el enlace de su droguería asignada.
 4. **Protección contra accesos no autorizados:** si se ingresan **8 intentos fallidos seguidos** con una misma cuenta/dirección, el acceso se bloquea temporalmente por 15 minutos como medida preventiva.
 
