@@ -50,6 +50,7 @@ export async function createProveedor(input: ProveedorInput) {
 
     if (error) return { success: false, error: error.message }
     revalidatePath('/proveedores')
+    revalidatePath('/compras')
     return { success: true, data }
   } catch (error: unknown) {
     return { success: false, error: error instanceof Error ? error.message : 'Error de validación' }
@@ -78,6 +79,7 @@ export async function updateProveedor(id: string, input: ProveedorInput) {
 
     if (error) return { success: false, error: error.message }
     revalidatePath('/proveedores')
+    revalidatePath('/compras')
     return { success: true, data }
   } catch (error: unknown) {
     return { success: false, error: error instanceof Error ? error.message : 'Error de validación' }
@@ -143,6 +145,7 @@ export async function registrarCompra(input: CompraInput) {
 
     revalidatePath('/compras')
     revalidatePath('/inventario')
+    revalidatePath('/dashboard')
     if (validated.estado_pago === 'pagado' && validated.metodo_pago === 'efectivo') {
       revalidatePath('/facturas')
       revalidatePath('/reportes')
@@ -175,6 +178,7 @@ export async function pagarCompraProveedor(
     revalidatePath('/compras')
     revalidatePath('/facturas')
     revalidatePath('/reportes')
+    revalidatePath('/dashboard')
     return { success: true, data }
   } catch (error: unknown) {
     return {

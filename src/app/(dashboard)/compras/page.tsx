@@ -8,6 +8,7 @@ import ComprasClient from './compras-client'
 export default async function ComprasPage() {
   const auth = await requireAdmin()
   if (!auth.ok) redirect('/dashboard')
+
   const [comprasRes, proveedoresRes, productosRes, cajaRes, inventarioRes] = await Promise.all([
     getCompras(),
     getProveedores(),
@@ -19,18 +20,15 @@ export default async function ComprasPage() {
   const compras = comprasRes.success && comprasRes.data ? comprasRes.data : []
   const proveedores = proveedoresRes.success && proveedoresRes.data ? proveedoresRes.data : []
   const productos = productosRes.success && productosRes.data ? productosRes.data : []
-  const caja = cajaRes
 
   return (
-    <div className="p-6">
-      <ComprasClient
-        initialData={compras}
-        proveedores={proveedores}
-        productos={productos}
-        caja={caja}
-        inventario={inventarioRes}
-        drogueria={auth.profile.drogueria}
-      />
-    </div>
+    <ComprasClient
+      initialData={compras}
+      proveedores={proveedores}
+      productos={productos}
+      caja={cajaRes}
+      inventario={inventarioRes}
+      drogueria={auth.profile.drogueria}
+    />
   )
 }
