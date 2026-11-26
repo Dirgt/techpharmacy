@@ -520,14 +520,11 @@ export function DashboardClient({
         <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-emerald-500/20 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-24 left-1/3 h-64 w-64 rounded-full bg-teal-400/15 blur-3xl" />
 
-        <div className="relative z-10 flex flex-col xl:flex-row xl:items-center justify-between gap-6">
-          <div className="space-y-3">
+        <div className="relative z-10 flex flex-col xl:flex-row xl:items-center justify-between gap-5">
+          <div className="space-y-2.5">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-emerald-300">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 px-3 py-1 text-[11px] font-bold text-emerald-200">
                 <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                Motor FEFO & POS Activo
-              </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 border border-white/15 px-3 py-1 text-[11px] font-bold text-slate-200">
                 {drogueriaNombre} • Plan {planLabel}
               </span>
               <span className="text-xs font-semibold text-emerald-200/80 capitalize">
@@ -537,11 +534,10 @@ export function DashboardClient({
 
             <div>
               <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-                Hola, {userName.split(' ')[0]} 👋 — Centro de Control Farmacéutico
+                Hola, {userName.split(' ')[0]} 👋
               </h1>
-              <p className="mt-1 text-sm text-emerald-100/80 max-w-2xl">
-                Supervisa ventas en tiempo real, arqueo exacto de efectivo vs Nequi, rotación de
-                medicamentos y bloqueo sanitario de vencidos desde un solo lugar.
+              <p className="mt-0.5 text-sm text-emerald-100/80">
+                Así va tu droguería el día de hoy.
               </p>
             </div>
 
@@ -611,7 +607,7 @@ export function DashboardClient({
               className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 px-5 py-2.5 text-xs sm:text-sm font-black text-slate-950 shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-300 hover:to-teal-300 hover:scale-[1.02]"
             >
               <ReceiptText className="h-4 w-4" />
-              Ir al Mostrador POS
+              Ir a Facturación
               <ArrowUpRight className="h-4 w-4" />
             </Link>
           </div>

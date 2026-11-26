@@ -26,7 +26,7 @@ Cada droguería cuenta con su propio portal web exclusivo (por ejemplo: `https:/
 ## 2. Dashboard (Centro de Control Farmacéutico)
 
 Al iniciar sesión aterrizas en el **Centro de Control Farmacéutico**, donde supervisas toda tu droguería de un vistazo:
-- **Barra de Comando Rápido:** muestra si tu **Caja está Abierta o Cerrada** (con su base inicial), cuántos usuarios están activos y botones directos para **Ir al Mostrador POS**, **Recibir Mercancía** o **Inventario & Lotes**.
+- **Barra de Comando Rápido:** muestra si tu **Caja está Abierta o Cerrada** (con su base inicial), cuántos usuarios están activos y botones directos para **Ir a Facturación**, **Recibir Mercancía** o **Inventario & Lotes**.
 - **Facturación de Hoy:** total vendido en el día, comparativo porcentual contra ayer, número de ventas, ticket promedio y barra divisoria entre **Efectivo** y **Pagos Digitales**.
 - **Pulso Comercial (7 o 14 días, en Curva o Barras):** gráfica interactiva de ingresos frente a compras/gastos, balance operativo y resumen de **Cartera por cobrar**.
 - **Arqueo por Medio de Pago:** distribución exacta entre **Efectivo en Cajón**, **Nequi / Daviplata / QR**, **Tarjeta / Datáfono** y **Crédito** (separando automáticamente cada peso de los pagos mixtos).
