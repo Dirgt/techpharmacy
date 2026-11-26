@@ -18,7 +18,8 @@ export default function ConfigClient({ profile, userEmail }: { profile: any; use
   const [confirmPassword, setConfirmPassword] = useState('')
 
   const drogueria = profile?.drogueria
-  const isTenantAdmin = profile?.role === 'admin' && Boolean(drogueria)
+  const isTenantAdmin =
+    (profile?.role === 'admin' || profile?.role === 'superadmin') && Boolean(drogueria)
 
   const [savingFiscal, setSavingFiscal] = useState(false)
   const [fiscalForm, setFiscalForm] = useState({

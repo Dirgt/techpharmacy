@@ -38,6 +38,18 @@ export function invalidateMiddlewareProfileCache(userId?: string) {
   profileCache.clear()
 }
 
+export function primeMiddlewareProfileCache(
+  userId: string,
+  profile: Omit<CachedMiddlewareProfile, 'expiresAt'>
+) {
+  if (profile.status === 'activo') {
+    profileCache.set(userId, {
+      ...profile,
+      expiresAt: Date.now() + PROFILE_CACHE_TTL_MS,
+    })
+  }
+}
+
 export async function updateSession(request: NextRequest) {
   if (request.nextUrl.pathname.startsWith('/api/v1')) {
     return NextResponse.next({ request })

@@ -138,12 +138,18 @@ export async function getPlatformOverview(): Promise<{
         .from('profiles')
         .select('id, username, full_name, role, status, drogueria_id, created_at')
         .order('created_at', { ascending: false }),
-      adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+      adminClient.auth.admin.listUsers({ page: 1, perPage: 200 }),
       adminClient.from('productos').select('id, drogueria_id'),
-      adminClient.from('facturas').select('id, drogueria_id, total, created_at'),
+      adminClient
+        .from('facturas')
+        .select('id, drogueria_id, total, created_at')
+        .neq('estado_pago', 'anulada'),
       adminClient.from('clientes').select('id, drogueria_id'),
       adminClient.from('compras').select('id, drogueria_id'),
-      adminClient.from('caja_sesiones').select('id, drogueria_id, estado'),
+      adminClient
+        .from('caja_sesiones')
+        .select('id, drogueria_id, estado')
+        .in('estado', ['abierta', 'abierto']),
       adminClient
         .from('api_keys')
         .select('id, drogueria_id, nombre, key_prefix, scopes, estado, last_used_at, expires_at, created_at')

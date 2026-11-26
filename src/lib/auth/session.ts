@@ -32,8 +32,16 @@ export type UserProfile = {
 
 export const getCurrentUserWithProfile = cache(async () => {
   const supabase = await createClient()
-  const { data: { user }, error } = await supabase.auth.getUser()
-  if (error || !user) return null
+  const { data: claimsData } = await supabase.auth.getClaims()
+  const claims = claimsData?.claims as { sub?: string; email?: string } | undefined
+  const userId = claims?.sub
+
+  if (!userId) return null
+
+  const user = {
+    id: userId,
+    email: claims?.email ?? '',
+  }
 
   const { data: profile } = await supabase
     .from('profiles')

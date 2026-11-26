@@ -1,151 +1,362 @@
 import { createClient } from '@/lib/supabase/server'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { 
-  Package, 
-  Users, 
-  ArrowUpRight, 
-  TrendingUp, 
-  AlertCircle,
-  LayoutDashboard,
-  AlertTriangle,
-  Clock
-} from 'lucide-react'
-import { getDashboardAlertas } from '@/app/actions/dashboard'
-import { getIngresosGastosMensuales, getReporteFinancieroDiario } from '@/app/actions/reportes'
-import { IngresosGastosChart } from '@/components/reportes/ingresos-gastos-chart'
-import { formatCurrency } from '@/lib/utils'
 import { getCurrentUserWithProfile } from '@/lib/auth/session'
+import { getSesionCajaAbierta } from '@/app/actions/caja'
+import { PLAN_CONFIG, type TenantPlan } from '@/lib/tenant/domain'
+import { calculatePV } from '@/lib/utils'
+import { getFacturaEfectivoReal } from '@/lib/pos/pago-mixto'
+import {
+  DashboardClient,
+  type DashboardAlertItem,
+  type DashboardRecentInvoice,
+  type DashboardSeriePoint,
+  type DashboardTopProduct,
+} from './dashboard-client'
+
+function getBogotaDateString(date: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Bogota',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
 
 export default async function DashboardPage() {
   const supabase = await createClient()
 
-  const [session, alertasRes, graficoRes, financieroDiaRes, usuariosActivosRes] = await Promise.all([
+  const ahora = new Date()
+  const hoyBogota = getBogotaDateString(ahora)
+
+  const ayerDate = new Date(ahora.getTime() - 24 * 60 * 60 * 1000)
+  const ayerBogota = getBogotaDateString(ayerDate)
+
+  const limite90Date = new Date(ahora.getTime() + 90 * 24 * 60 * 60 * 1000)
+  const limite90Bogota = getBogotaDateString(limite90Date)
+
+  const hace14Dias = new Date(ahora.getTime() - 13 * 24 * 60 * 60 * 1000)
+  hace14Dias.setUTCHours(0, 0, 0, 0)
+  const hace14DiasIso = hace14Dias.toISOString()
+
+  const hace30Dias = new Date(ahora.getTime() - 30 * 24 * 60 * 60 * 1000)
+  const hace30DiasIso = hace30Dias.toISOString()
+
+  const [
+    session,
+    cajaSesion,
+    inventarioRes,
+    facturas14dRes,
+    carteraRes,
+    gastos14dRes,
+    compras14dRes,
+    detallesTopRes,
+    usuariosActivosRes,
+  ] = await Promise.all([
     getCurrentUserWithProfile(),
-    getDashboardAlertas(),
-    getIngresosGastosMensuales(),
-    getReporteFinancieroDiario(),
-    supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('status', 'activo')
+    getSesionCajaAbierta(),
+    supabase
+      .from('vista_inventario_completo')
+      .select(
+        'inventario_id, producto_id, codigo, nombre_producto, cajas, blisters, unidades, blisters_por_caja, unidades_por_blister, stock_minimo, precio_caja, margen_caja, lote, fecha_vencimiento'
+      ),
+    supabase
+      .from('facturas')
+      .select(
+        'id, numero, cliente_nombre, total, metodo_pago, tipo_venta, estado_pago, monto_abonado, pago_efectivo, pago_tarjeta, pago_transferencia, created_at'
+      )
+      .neq('estado_pago', 'anulada')
+      .gte('created_at', hace14DiasIso)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('facturas')
+      .select('total, monto_abonado')
+      .eq('estado_pago', 'pendiente'),
+    supabase.from('gastos').select('monto, created_at').gte('created_at', hace14DiasIso),
+    supabase
+      .from('compras')
+      .select('total, estado_pago, created_at')
+      .gte('created_at', hace14DiasIso),
+    supabase
+      .from('factura_detalles')
+      .select(
+        'producto_id, cantidad_cajas, cantidad_blisters, cantidad_unidades, precio_unitario, factura:facturas!inner ( estado_pago, created_at ), producto:productos ( nombre )'
+      )
+      .neq('factura.estado_pago', 'anulada')
+      .gte('factura.created_at', hace30DiasIso)
+      .limit(300),
+    supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('status', 'activo'),
   ])
 
-  const alertas = alertasRes.success ? alertasRes.data : { vencimientos: [], vencidos: [], stockBajo: [] }
-  const datosGrafico = graficoRes.success ? graficoRes.data : []
-  const finDia = financieroDiaRes.success ? financieroDiaRes.data : { facturas: [], gastos: [], compras: [] }
-  const usuariosActivosCount = usuariosActivosRes.count ?? 0
+  const profile = session?.profile
+  const drogueria = profile?.drogueria
+  const prefijo = drogueria?.prefijo_factura?.trim() || ''
+  const planKey = (drogueria?.plan as TenantPlan) || 'basico'
+  const planLabel = PLAN_CONFIG[planKey]?.label || drogueria?.plan || 'Básico'
 
-  const totalVentasDia = finDia.facturas.reduce((sum: number, f) => sum + Number(f.total || 0), 0)
-  const totalCriticos = (alertas?.vencidos?.length || 0) + (alertas?.stockBajo?.length || 0)
+  const fechaHoyTexto = new Intl.DateTimeFormat('es-CO', {
+    timeZone: 'America/Bogota',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  }).format(ahora)
 
-  const stats = [
-    { title: 'Ventas de Hoy', value: formatCurrency(totalVentasDia), icon: TrendingUp, trend: 'Actual', color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { title: 'Alertas de Stock', value: alertas?.stockBajo?.length.toString() || '0', icon: Package, trend: 'Críticos', color: 'text-blue-600', bg: 'bg-blue-50' },
-    { title: 'Usuarios Activos', value: usuariosActivosCount.toString(), icon: Users, trend: 'Equipo', color: 'text-purple-600', bg: 'bg-purple-50' },
-    { title: 'Vencimientos', value: ((alertas?.vencidos?.length || 0) + (alertas?.vencimientos?.length || 0)).toString(), icon: AlertCircle, trend: 'Revisión', color: 'text-amber-600', bg: 'bg-amber-50' },
-  ]
+  // 1. Procesamiento en memoria del inventario (1 sola consulta a BD)
+  const invRows = inventarioRes.data || []
+  let totalUnidadesDisponibles = 0
+  let valorInventarioCosto = 0
+  let valorInventarioVenta = 0
+  const vencidos: DashboardAlertItem[] = []
+  const porVencer: DashboardAlertItem[] = []
+  const stockBajo: DashboardAlertItem[] = []
+  const ratiosByProd = new Map<string, { bpc: number; upb: number }>()
+
+  for (const item of invRows) {
+    const c = Math.max(0, Number(item.cajas || 0))
+    const b = Math.max(0, Number(item.blisters || 0))
+    const u = Math.max(0, Number(item.unidades || 0))
+    const bpc = Math.max(1, Number(item.blisters_por_caja || 1))
+    const upb = Math.max(1, Number(item.unidades_por_blister || 1))
+    const upc = bpc * upb
+    const totalUnitsItem = c * upc + b * upb + u
+
+    if (item.producto_id) {
+      ratiosByProd.set(item.producto_id, { bpc, upb })
+    }
+
+    const fv = item.fecha_vencimiento || null
+    const isExpired = Boolean(fv && fv < hoyBogota)
+
+    if (!isExpired) {
+      totalUnidadesDisponibles += totalUnitsItem
+      const costoCaja = Number(item.precio_caja || 0)
+      const margenCaja = Number(item.margen_caja || 0)
+      const pvCaja = calculatePV(costoCaja, margenCaja)
+      const equivCajas = c + b / bpc + u / upc
+      valorInventarioCosto += equivCajas * costoCaja
+      valorInventarioVenta += equivCajas * pvCaja
+    }
+
+    const baseId = item.inventario_id || item.producto_id || item.codigo || 'item'
+    const minStock = Number(item.stock_minimo ?? 2)
+
+    if (isExpired && totalUnitsItem > 0) {
+      vencidos.push({
+        id: baseId,
+        nombre: item.nombre_producto || 'Producto',
+        codigo: item.codigo || '',
+        lote: item.lote ?? null,
+        fechaVencimiento: fv,
+        cajas: c,
+        stockMinimo: minStock,
+        tipo: 'vencido',
+      })
+    } else if (fv && fv >= hoyBogota && fv <= limite90Bogota && totalUnitsItem > 0) {
+      porVencer.push({
+        id: baseId,
+        nombre: item.nombre_producto || 'Producto',
+        codigo: item.codigo || '',
+        lote: item.lote ?? null,
+        fechaVencimiento: fv,
+        cajas: c,
+        stockMinimo: minStock,
+        tipo: 'por_vencer',
+      })
+    }
+
+    if (c <= minStock) {
+      stockBajo.push({
+        id: baseId,
+        nombre: item.nombre_producto || 'Producto',
+        codigo: item.codigo || '',
+        lote: item.lote ?? null,
+        fechaVencimiento: fv,
+        cajas: c,
+        stockMinimo: minStock,
+        tipo: 'stock_bajo',
+      })
+    }
+  }
+
+  porVencer.sort((a, b) => (a.fechaVencimiento || '').localeCompare(b.fechaVencimiento || ''))
+  stockBajo.sort((a, b) => a.cajas - b.cajas)
+
+  // 2. Serie de 14 días + Ventas de Hoy / Ayer + Mix de Pagos
+  const serieMap = new Map<string, DashboardSeriePoint>()
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(ahora.getTime() - i * 24 * 60 * 60 * 1000)
+    const key = getBogotaDateString(d)
+    if (!serieMap.has(key)) {
+      serieMap.set(key, { fecha: key, ingresos: 0, gastos: 0 })
+    }
+  }
+
+  let ventasHoy = 0
+  let ventasAyer = 0
+  let facturasHoyCount = 0
+  let efectivoHoy = 0
+  let digitalHoy = 0
+
+  let pagoEfectivoPeriodo = 0
+  let pagoTransferenciaPeriodo = 0
+  let pagoTarjetaPeriodo = 0
+  let pagoCreditoPeriodo = 0
+
+  const facturasRows = facturas14dRes.data || []
+
+  for (const fac of facturasRows) {
+    const total = Number(fac.total || 0)
+    const fechaDia = fac.created_at ? getBogotaDateString(new Date(fac.created_at)) : ''
+    const point = serieMap.get(fechaDia)
+    if (point) {
+      point.ingresos += total
+    }
+
+    const efReal = getFacturaEfectivoReal(fac)
+    const trfReal =
+      fac.metodo_pago === 'mixto'
+        ? Number(fac.pago_transferencia || 0)
+        : fac.metodo_pago === 'transferencia' && fac.tipo_venta !== 'credito'
+          ? total
+          : 0
+    const tarReal =
+      fac.metodo_pago === 'mixto'
+        ? Number(fac.pago_tarjeta || 0)
+        : fac.metodo_pago === 'tarjeta' && fac.tipo_venta !== 'credito'
+          ? total
+          : 0
+    const credReal =
+      fac.tipo_venta === 'credito' ? Math.max(0, total - Number(fac.monto_abonado || 0)) : 0
+
+    pagoEfectivoPeriodo += efReal
+    pagoTransferenciaPeriodo += trfReal
+    pagoTarjetaPeriodo += tarReal
+    pagoCreditoPeriodo += credReal
+
+    if (fechaDia === hoyBogota) {
+      ventasHoy += total
+      facturasHoyCount += 1
+      efectivoHoy += efReal
+      digitalHoy += trfReal + tarReal
+    } else if (fechaDia === ayerBogota) {
+      ventasAyer += total
+    }
+  }
+
+  for (const g of gastos14dRes.data || []) {
+    const fechaDia = g.created_at ? getBogotaDateString(new Date(g.created_at)) : ''
+    const point = serieMap.get(fechaDia)
+    if (point) {
+      point.gastos += Number(g.monto || 0)
+    }
+  }
+
+  for (const comp of compras14dRes.data || []) {
+    const fechaDia = comp.created_at ? getBogotaDateString(new Date(comp.created_at)) : ''
+    const point = serieMap.get(fechaDia)
+    if (point) {
+      point.gastos += Number(comp.total || 0)
+    }
+  }
+
+  const serie14Dias = Array.from(serieMap.values()).sort((a, b) =>
+    a.fecha.localeCompare(b.fecha)
+  )
+
+  // 3. Cartera pendiente activa
+  const carteraRows = carteraRes.data || []
+  const carteraPendienteCount = carteraRows.length
+  const carteraPendienteTotal = carteraRows.reduce(
+    (sum, f) => sum + Math.max(0, Number(f.total || 0) - Number(f.monto_abonado || 0)),
+    0
+  )
+
+  // 4. Top medicamentos últimos 30 días
+  const topMap = new Map<string, DashboardTopProduct>()
+  for (const det of detallesTopRes.data || []) {
+    if (!det.producto_id) continue
+    const prodObj = Array.isArray(det.producto) ? det.producto[0] : det.producto
+    const nombre = prodObj?.nombre || 'Medicamento'
+    const ratios = ratiosByProd.get(det.producto_id) || { bpc: 1, upb: 1 }
+    const upc = ratios.bpc * ratios.upb
+
+    const c = Number(det.cantidad_cajas || 0)
+    const b = Number(det.cantidad_blisters || 0)
+    const u = Number(det.cantidad_unidades || 0)
+    const unidadesDespachadas = c * upc + b * ratios.upb + u
+    const cajasEquiv = c + b / ratios.bpc + u / upc
+    const subtotal = Number(det.precio_unitario || 0)
+
+    const current = topMap.get(det.producto_id) || {
+      id: det.producto_id,
+      nombre,
+      unidadesEquiv: 0,
+      cajasEquiv: 0,
+      ingresosEstimados: 0,
+    }
+    current.unidadesEquiv += unidadesDespachadas
+    current.cajasEquiv = Number((current.cajasEquiv + cajasEquiv).toFixed(1))
+    current.ingresosEstimados += subtotal
+    topMap.set(det.producto_id, current)
+  }
+
+  const topProductos = Array.from(topMap.values())
+    .sort((a, b) => b.ingresosEstimados - a.ingresosEstimados || b.unidadesEquiv - a.unidadesEquiv)
+    .slice(0, 5)
+
+  // 5. Últimas 5 facturas
+  const facturasRecientes: DashboardRecentInvoice[] = facturasRows.slice(0, 5).map((f) => {
+    const padded = String(f.numero || 0).padStart(5, '0')
+    return {
+      id: f.id,
+      numeroFormateado: prefijo ? `${prefijo}-${padded}` : padded,
+      clienteNombre: f.cliente_nombre || 'Consumidor Final',
+      metodoPago: f.metodo_pago || 'efectivo',
+      tipoVenta: f.tipo_venta || 'contado',
+      estadoPago: f.estado_pago || 'pagado',
+      total: Number(f.total || 0),
+      createdAt: f.created_at || ahora.toISOString(),
+    }
+  })
 
   return (
-    <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-4xl font-black tracking-tight text-slate-900 flex items-center gap-4">
-          <div className="bg-emerald-600 p-2 rounded-2xl shadow-lg shadow-emerald-600/20">
-            <LayoutDashboard className="h-8 w-8 text-white" />
-          </div>
-          Resumen Operativo
-        </h1>
-        <p className="text-slate-500 text-lg font-medium">
-          Bienvenido, <span className="text-emerald-600 font-bold">{session?.profile?.full_name || session?.user?.email}</span>. Aquí tienes el estado actual de la farmacia.
-        </p>
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => (
-          <Card key={stat.title} className="border-none bg-white shadow-xl shadow-slate-200/50 rounded-[2rem] hover:scale-105 transition-all duration-300 group">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4 p-8">
-              <CardTitle className="text-sm font-black text-slate-400 uppercase tracking-widest">{stat.title}</CardTitle>
-              <div className={`${stat.bg} ${stat.color} p-3 rounded-2xl group-hover:rotate-12 transition-transform`}>
-                <stat.icon className="h-5 w-5" />
-              </div>
-            </CardHeader>
-            <CardContent className="px-8 pb-8">
-              <div className="text-3xl font-black text-slate-900">{stat.value}</div>
-              <p className="text-xs text-slate-400 mt-2 flex items-center font-bold">
-                <ArrowUpRight className="h-4 w-4 mr-1 text-emerald-500" />
-                {stat.trend}
-              </p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      <div className="grid gap-8 lg:grid-cols-3">
-        <Card className="lg:col-span-2 border-none bg-white shadow-2xl shadow-slate-200/60 rounded-[2.5rem] overflow-hidden">
-          <CardHeader className="p-8 bg-slate-50/50 border-b border-slate-100">
-            <CardTitle className="text-slate-900 text-xl font-black uppercase tracking-wider">Ingresos vs Gastos (Últimos 7 días)</CardTitle>
-          </CardHeader>
-          <CardContent className="p-10">
-            {datosGrafico.length > 0 ? (
-              <IngresosGastosChart data={datosGrafico} />
-            ) : (
-              <div className="flex h-[250px] flex-col items-center justify-center text-slate-300 border-4 border-dashed border-slate-50 rounded-[2rem] gap-4">
-                 <p className="font-bold text-slate-400">No hay datos suficientes</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-none bg-white shadow-2xl shadow-slate-200/60 rounded-[2.5rem] overflow-hidden">
-          <CardHeader className="p-8 bg-slate-50/50 border-b border-slate-100">
-            <CardTitle className="text-slate-900 text-xl font-black uppercase tracking-wider">Alertas Críticas</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0 overflow-y-auto max-h-[350px]">
-            <div className="flex flex-col divide-y divide-slate-100">
-              {alertas?.vencidos?.map((item, idx: number) => (
-                <div key={`vencido-${item.inventario_id || item.producto_id || idx}`} className="p-6 flex items-start gap-4 hover:bg-slate-50">
-                  <div className="bg-rose-100 p-2 rounded-full shrink-0">
-                    <AlertTriangle className="h-5 w-5 text-rose-600" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-slate-900">{item.nombre_producto}</p>
-                    <p className="text-sm text-rose-600 font-medium">Vencido el {item.fecha_vencimiento}</p>
-                  </div>
-                </div>
-              ))}
-              
-              {alertas?.vencimientos?.map((item, idx: number) => (
-                <div key={`vencimiento-${item.inventario_id || item.producto_id || idx}`} className="p-6 flex items-start gap-4 hover:bg-slate-50">
-                  <div className="bg-amber-100 p-2 rounded-full shrink-0">
-                    <Clock className="h-5 w-5 text-amber-600" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-slate-900">{item.nombre_producto}</p>
-                    <p className="text-sm text-amber-600 font-medium">Vence pronto ({item.fecha_vencimiento})</p>
-                  </div>
-                </div>
-              ))}
-
-              {alertas?.stockBajo?.map((item, idx: number) => (
-                <div key={`stock-${item.inventario_id || item.producto_id || idx}`} className="p-6 flex items-start gap-4 hover:bg-slate-50">
-                  <div className="bg-blue-100 p-2 rounded-full shrink-0">
-                    <Package className="h-5 w-5 text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-slate-900">{item.nombre_producto}</p>
-                    <p className="text-sm text-blue-600 font-medium">Stock bajo: quedan {item.cajas} cajas</p>
-                  </div>
-                </div>
-              ))}
-
-              {totalCriticos === 0 && (!alertas?.vencimientos || alertas?.vencimientos.length === 0) && (
-                <div className="p-10 flex flex-col items-center justify-center text-slate-400">
-                  <div className="bg-emerald-50 p-4 rounded-full mb-3">
-                    <AlertCircle className="h-8 w-8 text-emerald-500" />
-                  </div>
-                  <p className="font-bold text-center">Todo está en orden</p>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+    <DashboardClient
+      userName={profile?.full_name || session?.user?.email || 'Administrador'}
+      role={profile?.role || 'vendedor'}
+      drogueriaNombre={drogueria?.nombre || 'TechPharmacy'}
+      planLabel={planLabel}
+      fechaHoyTexto={fechaHoyTexto}
+      cajaAbierta={{
+        abierta: Boolean(cajaSesion),
+        montoApertura: Number(cajaSesion?.monto_apertura || 0),
+        fechaApertura: cajaSesion?.fecha_apertura ?? null,
+      }}
+      realData={{
+        ventasHoy,
+        ventasAyer,
+        facturasHoyCount,
+        ticketPromedioHoy: facturasHoyCount > 0 ? Math.round(ventasHoy / facturasHoyCount) : 0,
+        efectivoHoy,
+        digitalHoy,
+        carteraPendienteTotal,
+        carteraPendienteCount,
+        totalProductos: invRows.length,
+        totalUnidadesDisponibles,
+        valorInventarioCosto: Math.round(valorInventarioCosto),
+        valorInventarioVenta: Math.round(valorInventarioVenta),
+        usuariosActivos: usuariosActivosRes.count ?? 1,
+        maxUsuarios: drogueria?.max_usuarios ?? 5,
+        pagoEfectivoPeriodo: Math.round(pagoEfectivoPeriodo),
+        pagoTransferenciaPeriodo: Math.round(pagoTransferenciaPeriodo),
+        pagoTarjetaPeriodo: Math.round(pagoTarjetaPeriodo),
+        pagoCreditoPeriodo: Math.round(pagoCreditoPeriodo),
+        serie14Dias,
+        alertas: {
+          vencidos: vencidos.slice(0, 10),
+          porVencer: porVencer.slice(0, 10),
+          stockBajo: stockBajo.slice(0, 10),
+        },
+        topProductos,
+        facturasRecientes,
+      }}
+    />
   )
 }

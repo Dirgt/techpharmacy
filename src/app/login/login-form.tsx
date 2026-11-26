@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { login } from '@/app/actions/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,10 +31,16 @@ export function LoginForm({
   initialError: string | null
   tenant: PublicTenantInfo | null
 }) {
+  const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(initialError)
   const [showPassword, setShowPassword] = useState(false)
   const tenantSuspension = tenant ? isTenantSuspended(tenant) : { suspended: false, reason: null }
+
+  useEffect(() => {
+    router.prefetch('/dashboard')
+    router.prefetch('/droguerias')
+  }, [router])
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -46,6 +53,11 @@ export function LoginForm({
     if (result?.error) {
       setError(result.error)
       setLoading(false)
+      return
+    }
+
+    if (result?.redirectTo) {
+      router.replace(result.redirectTo)
     }
   }
 

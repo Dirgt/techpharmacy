@@ -23,14 +23,18 @@ Cada droguería cuenta con su propio portal web exclusivo (por ejemplo: `https:/
 
 ---
 
-## 2. Dashboard (Resumen Operativo Diario)
+## 2. Dashboard (Centro de Control Farmacéutico)
 
-Al iniciar sesión aterrizas en el **Dashboard**, donde ves en tiempo real:
-- **Ventas de Hoy:** total facturado en la jornada actual (excluyendo facturas anuladas).
-- **Alertas de Stock:** productos que alcanzaron su stock mínimo configurado.
-- **Usuarios Activos:** cuentas habilitadas en tu droguería.
-- **Vencimientos:** productos ya vencidos (rojo) y próximos a vencer dentro de los siguientes **90 días** (ámbar).
-- **Gráfico Ingresos vs Gastos (Últimos 7 días):** comparación diaria entre ventas y egresos por compras/gastos.
+Al iniciar sesión aterrizas en el **Centro de Control Farmacéutico**, donde supervisas toda tu droguería de un vistazo:
+- **Barra de Comando Rápido:** muestra si tu **Caja está Abierta o Cerrada** (con su base inicial), cuántos usuarios están activos y botones directos para **Ir al Mostrador POS**, **Recibir Mercancía** o **Inventario & Lotes**.
+- **Facturación de Hoy:** total vendido en el día, comparativo porcentual contra ayer, número de ventas, ticket promedio y barra divisoria entre **Efectivo** y **Pagos Digitales**.
+- **Pulso Comercial (7 o 14 días, en Curva o Barras):** gráfica interactiva de ingresos frente a compras/gastos, balance operativo y resumen de **Cartera por cobrar**.
+- **Arqueo por Medio de Pago:** distribución exacta entre **Efectivo en Cajón**, **Nequi / Daviplata / QR**, **Tarjeta / Datáfono** y **Crédito** (separando automáticamente cada peso de los pagos mixtos).
+- **Inteligencia Operativa en 3 Paneles:**
+  1. **Radar FEFO & Reposición:** pestañas rápidas para filtrar **Vencidos (bloqueados en POS)**, **Por vencer (próximos 90 días)** y **Stock bajo**.
+  2. **Top Medicamentos (30 Días):** ranking de los 5 productos con mayor rotación e ingresos.
+  3. **Últimas Ventas en Mostrador:** recibos recientes con botón directo para reimprimir o enviar la tirilla por WhatsApp.
+- **Botón "Vista Demo" (solo Administradores):** permite alternar temporalmente cifras de demostración comercial para capacitaciones o presentaciones sin alterar tus datos reales.
 
 ---
 

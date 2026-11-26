@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { isTenantSuspended } from '@/lib/tenant/domain'
 import { resolveTenantWithSupabase } from '@/lib/tenant/resolve'
+import { primeMiddlewareProfileCache } from '@/lib/supabase/middleware'
 import {
   checkLoginRateLimit,
   clearLoginAttempts,
@@ -54,20 +55,25 @@ export async function login(formData: FormData) {
 
   clearLoginAttempts(rateLimitKey)
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select(
-      'status, role, drogueria_id, drogueria:drogueria_id ( id, nombre, subdominio, estado, fecha_vencimiento, motivo_suspension )'
-    )
-    .eq('id', data.user.id)
-    .single()
+  const [{ data: profile }, hostTenant] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select(
+        'status, role, drogueria_id, drogueria:drogueria_id ( id, nombre, subdominio, estado, fecha_vencimiento, motivo_suspension )'
+      )
+      .eq('id', data.user.id)
+      .single(),
+    resolveTenantWithSupabase(supabase, rawHost),
+  ])
 
   if (!profile || profile.status !== 'activo') {
     await supabase.auth.signOut()
     return { error: 'Tu cuenta se encuentra inactiva. Contacta al administrador.' }
   }
 
-  const hostTenant = await resolveTenantWithSupabase(supabase, rawHost)
+  const drogueriaRaw = Array.isArray(profile.drogueria)
+    ? profile.drogueria[0]
+    : profile.drogueria
 
   if (profile.role === 'superadmin') {
     if (hostTenant) {
@@ -75,9 +81,28 @@ export async function login(formData: FormData) {
         .from('profiles')
         .update({ drogueria_id: hostTenant.id, updated_at: new Date().toISOString() })
         .eq('id', data.user.id)
-      redirect('/dashboard')
+      primeMiddlewareProfileCache(data.user.id, {
+        role: 'superadmin',
+        status: profile.status,
+        drogueriaId: hostTenant.id,
+        drogueriaEstado: hostTenant.estado,
+        drogueriaFechaVencimiento: hostTenant.fecha_vencimiento,
+        drogueriaMotivoSuspension: hostTenant.motivo_suspension,
+      })
+      return { success: true, redirectTo: '/dashboard' }
     }
-    redirect('/droguerias')
+    primeMiddlewareProfileCache(data.user.id, {
+      role: 'superadmin',
+      status: profile.status,
+      drogueriaId: profile.drogueria_id,
+      drogueriaEstado: drogueriaRaw?.estado ?? null,
+      drogueriaFechaVencimiento: drogueriaRaw?.fecha_vencimiento ?? null,
+      drogueriaMotivoSuspension: drogueriaRaw?.motivo_suspension ?? null,
+    })
+    return {
+      success: true,
+      redirectTo: profile.drogueria_id ? '/dashboard' : '/droguerias',
+    }
   }
 
   if (hostTenant && hostTenant.id !== profile.drogueria_id) {
@@ -87,9 +112,6 @@ export async function login(formData: FormData) {
     }
   }
 
-  const drogueriaRaw = Array.isArray(profile.drogueria)
-    ? profile.drogueria[0]
-    : profile.drogueria
   const suspension = isTenantSuspended(drogueriaRaw)
 
   if (suspension.suspended) {
@@ -101,7 +123,16 @@ export async function login(formData: FormData) {
     }
   }
 
-  redirect('/dashboard')
+  primeMiddlewareProfileCache(data.user.id, {
+    role: profile.role,
+    status: profile.status,
+    drogueriaId: profile.drogueria_id,
+    drogueriaEstado: drogueriaRaw?.estado ?? null,
+    drogueriaFechaVencimiento: drogueriaRaw?.fecha_vencimiento ?? null,
+    drogueriaMotivoSuspension: drogueriaRaw?.motivo_suspension ?? null,
+  })
+
+  return { success: true, redirectTo: '/dashboard' }
 }
 
 export async function logout() {

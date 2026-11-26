@@ -110,8 +110,8 @@ export default async function DashboardLayout({
           </div>
         </header>
 
-        <main className="flex-1 relative overflow-y-auto focus:outline-none p-4 md:p-8 bg-slate-50/50">
-          <div className="max-w-7xl mx-auto">
+        <main className="flex-1 relative overflow-y-auto focus:outline-none p-4 md:p-6 lg:p-8 bg-slate-50/70">
+          <div className="max-w-[1600px] mx-auto w-full">
             {children}
           </div>
         </main>
