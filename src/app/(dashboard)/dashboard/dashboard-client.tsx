@@ -352,8 +352,10 @@ export function DashboardClient({
   cajaAbierta,
   realData,
 }: DashboardClientProps) {
-  const isAdminOrSuper = role === 'admin' || role === 'superadmin'
+  const isSuperAdmin = role === 'superadmin'
+  const isAdminOrSuper = role === 'admin' || isSuperAdmin
   const [demoMode, setDemoMode] = useState(false)
+  const isDemoActive = isSuperAdmin && demoMode
   const [rangeDays, setRangeDays] = useState<7 | 14>(7)
   const [chartMode, setChartMode] = useState<'area' | 'bar'>('area')
   const [alertTab, setAlertTab] = useState<'todos' | 'vencido' | 'por_vencer' | 'stock_bajo'>(
@@ -369,8 +371,8 @@ export function DashboardClient({
     [realData.serie14Dias]
   )
 
-  const active = demoMode ? demoData : realData
-  const effectiveCaja = demoMode
+  const active = isDemoActive ? demoData : realData
+  const effectiveCaja = isDemoActive
     ? { abierta: true, montoApertura: 150000, fechaApertura: new Date().toISOString() }
     : cajaAbierta
 
@@ -492,15 +494,14 @@ export function DashboardClient({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      {/* Banner aviso si está en Modo Demo Comercial */}
-      {demoMode && (
+      {/* Banner aviso si está en Modo Demo Comercial (exclusivo SuperAdmin) */}
+      {isDemoActive && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-amber-300/80 bg-gradient-to-r from-amber-50 via-yellow-50 to-emerald-50 px-4 py-3 shadow-sm">
           <div className="flex items-center gap-2.5 text-xs sm:text-sm font-bold text-amber-950">
             <Sparkles className="h-4 w-4 shrink-0 text-amber-600" />
             <span>
-              <strong>Vista Demo Comercial activa:</strong> Estás visualizando cifras simuladas de
-              una droguería en plena operación (ideal para presentaciones y videos). Tus datos
-              reales no se modifican.
+              <strong>Vista Demo Comercial activa (Solo SuperAdmin):</strong> Estás visualizando
+              cifras simuladas para presentaciones y videos. Tus clientes nunca ven este botón.
             </span>
           </div>
           <Button
@@ -571,19 +572,19 @@ export function DashboardClient({
 
           {/* Botonera ejecutiva de acción rápida */}
           <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-            {isAdminOrSuper && (
+            {isSuperAdmin && (
               <button
                 type="button"
                 onClick={() => setDemoMode((prev) => !prev)}
-                title="Alternar cifras de demostración comercial para presentaciones o videos"
+                title="Exclusivo SuperAdmin: alternar cifras de demostración comercial"
                 className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2.5 text-xs font-black transition-all cursor-pointer ${
-                  demoMode
+                  isDemoActive
                     ? 'border-amber-300 bg-amber-400 text-slate-950 shadow-lg shadow-amber-400/25'
                     : 'border-white/20 bg-white/10 text-white hover:bg-white/20'
                 }`}
               >
                 <Eye className="h-4 w-4" />
-                {demoMode ? 'Demo Activa' : 'Vista Demo'}
+                {isDemoActive ? 'Demo Activa' : 'Vista Demo'}
               </button>
             )}
 
@@ -1278,7 +1279,7 @@ export function DashboardClient({
                           })}
                         </p>
                       </div>
-                      {!demoMode && (
+                      {!isDemoActive && (
                         <Link
                           href={`/facturas/${fac.id}/print`}
                           title="Imprimir o enviar tirilla por WhatsApp"

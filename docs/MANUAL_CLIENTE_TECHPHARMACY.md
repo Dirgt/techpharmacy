@@ -34,7 +34,6 @@ Al iniciar sesión aterrizas en el **Centro de Control Farmacéutico**, donde su
   1. **Radar FEFO & Reposición:** pestañas rápidas para filtrar **Vencidos (bloqueados en POS)**, **Por vencer (próximos 90 días)** y **Stock bajo**.
   2. **Top Medicamentos (30 Días):** ranking de los 5 productos con mayor rotación e ingresos.
   3. **Últimas Ventas en Mostrador:** recibos recientes con botón directo para reimprimir o enviar la tirilla por WhatsApp.
-- **Botón "Vista Demo" (solo Administradores):** permite alternar temporalmente cifras de demostración comercial para capacitaciones o presentaciones sin alterar tus datos reales.
 
 ---
 
