@@ -45,6 +45,10 @@ export async function login(formData: FormData) {
 
   if (error || !data.user) {
     recordFailedLoginAttempt(rateLimitKey)
+    const msg = error?.message || ''
+    if (msg && !msg.toLowerCase().includes('invalid login credentials')) {
+      return { error: `Error de autenticación: ${msg}` }
+    }
     return { error: 'Credenciales inválidas o cuenta inactiva' }
   }
 
@@ -63,11 +67,18 @@ export async function login(formData: FormData) {
     return { error: 'Tu cuenta se encuentra inactiva. Contacta al administrador.' }
   }
 
+  const hostTenant = await resolveTenantWithSupabase(supabase, rawHost)
+
   if (profile.role === 'superadmin') {
+    if (hostTenant) {
+      await supabase
+        .from('profiles')
+        .update({ drogueria_id: hostTenant.id, updated_at: new Date().toISOString() })
+        .eq('id', data.user.id)
+      redirect('/dashboard')
+    }
     redirect('/droguerias')
   }
-
-  const hostTenant = await resolveTenantWithSupabase(supabase, rawHost)
 
   if (hostTenant && hostTenant.id !== profile.drogueria_id) {
     await supabase.auth.signOut()

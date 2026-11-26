@@ -623,3 +623,68 @@ export async function revokeApiKey(apiKeyId: string): Promise<{
     }
   }
 }
+
+export async function switchSuperAdminWorkspace(drogueriaId: string | null): Promise<{
+  success: boolean
+  error?: string
+}> {
+  try {
+    const auth = await requireSuperAdmin()
+    if (!auth.ok) return { success: false, error: auth.error }
+
+    const adminClient = getAdminClient()
+    const { error } = await adminClient
+      .from('profiles')
+      .update({
+        drogueria_id: drogueriaId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', auth.user.id)
+
+    if (error) return { success: false, error: error.message }
+
+    invalidateMiddlewareProfileCache(auth.user.id)
+    revalidatePath('/', 'layout')
+    revalidatePath('/droguerias')
+    revalidatePath('/dashboard')
+    revalidatePath('/inventario')
+    revalidatePath('/facturas')
+    return { success: true }
+  } catch (error: unknown) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'No se pudo cambiar la sede activa',
+    }
+  }
+}
+
+export async function resetPlatformUserPassword(input: {
+  user_id: string
+  password: string
+}): Promise<{
+  success: boolean
+  error?: string
+}> {
+  try {
+    const auth = await requireSuperAdmin()
+    if (!auth.ok) return { success: false, error: auth.error }
+
+    if (!input.user_id || !input.password || input.password.length < 6) {
+      return { success: false, error: 'La contraseña debe tener al menos 6 caracteres' }
+    }
+
+    const adminClient = getAdminClient()
+    const { error } = await adminClient.auth.admin.updateUserById(input.user_id, {
+      password: input.password,
+    })
+
+    if (error) return { success: false, error: error.message }
+
+    return { success: true }
+  } catch (error: unknown) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Error al cambiar la contraseña del usuario',
+    }
+  }
+}

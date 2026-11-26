@@ -49,16 +49,18 @@ function parseSuperAdminTab(raw: string | null): SuperAdminTab {
 function SidebarInner({
   role,
   drogueriaNombre,
+  hasActiveTenant,
   onNavigate,
 }: {
   role?: string | null
   drogueriaNombre?: string | null
+  hasActiveTenant?: boolean
   onNavigate?: () => void
 }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const isSuperAdmin = role === 'superadmin'
-  const isAdmin = role === 'admin'
+  const isAdmin = role === 'admin' || isSuperAdmin
   const urlTab = parseSuperAdminTab(searchParams.get('tab'))
   const [clientTab, setClientTab] = useState<SuperAdminTab>(urlTab)
   const [prevUrlTab, setPrevUrlTab] = useState<SuperAdminTab>(urlTab)
@@ -87,14 +89,14 @@ function SidebarInner({
     <div className="flex h-full flex-col bg-white border-r border-slate-100 w-64 shadow-sm">
       <div className="flex h-16 items-center px-6 border-b border-slate-100 bg-slate-50/30">
         <Link
-          href={isSuperAdmin ? '/droguerias' : '/dashboard'}
+          href={isSuperAdmin && !hasActiveTenant ? '/droguerias' : '/dashboard'}
           onClick={onNavigate}
           className="flex items-center gap-3 group min-w-0"
         >
           <div
             className={cn(
               'p-1.5 rounded-xl shadow-lg group-hover:scale-110 transition-transform shrink-0',
-              isSuperAdmin
+              isSuperAdmin && !hasActiveTenant
                 ? 'bg-indigo-600 shadow-indigo-600/20'
                 : 'bg-emerald-600 shadow-emerald-600/20'
             )}
@@ -103,7 +105,7 @@ function SidebarInner({
           </div>
           <div className="min-w-0">
             <span className="text-lg font-black text-slate-900 tracking-tight block truncate">
-              {isSuperAdmin ? 'TechPharmacy' : drogueriaNombre || 'TechPharmacy'}
+              {drogueriaNombre || 'TechPharmacy'}
             </span>
             <span
               className={cn(
@@ -111,14 +113,18 @@ function SidebarInner({
                 isSuperAdmin ? 'text-indigo-600' : 'text-slate-400'
               )}
             >
-              {isSuperAdmin ? 'Consola Superadmin' : 'TechPharmacy POS'}
+              {isSuperAdmin
+                ? hasActiveTenant
+                  ? 'Modo Soporte Superadmin'
+                  : 'Consola Superadmin'
+                : 'TechPharmacy POS'}
             </span>
           </div>
         </Link>
       </div>
 
       <div className="flex-1 overflow-y-auto py-8 px-4 space-y-2">
-        {isSuperAdmin ? (
+        {isSuperAdmin && (
           <>
             <p className="px-4 pb-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
               Plataforma SaaS
@@ -160,33 +166,42 @@ function SidebarInner({
               )
             })}
           </>
-        ) : (
-          visibleTenantItems.map((item) => {
-            const isActive = pathname === item.href
-            return (
-              <Link
-                key={item.name}
-                href={item.href}
-                prefetch={false}
-                onClick={onNavigate}
-                className={cn(
-                  'flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-2xl transition-all duration-200 group',
-                  isActive
-                    ? 'bg-emerald-50 text-emerald-700 shadow-sm shadow-emerald-600/5'
-                    : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
-                )}
-              >
-                <item.icon
+        )}
+
+        {(!isSuperAdmin || hasActiveTenant) && (
+          <>
+            {isSuperAdmin && hasActiveTenant && (
+              <p className="px-4 pt-4 pb-1 text-[10px] font-black uppercase tracking-widest text-emerald-600">
+                Sede Activa: {drogueriaNombre}
+              </p>
+            )}
+            {visibleTenantItems.map((item) => {
+              const isActive = pathname === item.href
+              return (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  prefetch={false}
+                  onClick={onNavigate}
                   className={cn(
-                    'h-5 w-5 transition-colors',
-                    isActive ? 'text-emerald-600' : 'text-slate-400 group-hover:text-slate-600'
+                    'flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-2xl transition-all duration-200 group',
+                    isActive
+                      ? 'bg-emerald-50 text-emerald-700 shadow-sm shadow-emerald-600/5'
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
                   )}
-                />
-                {item.name}
-                {isActive && <div className="ml-auto w-1.5 h-6 rounded-full bg-emerald-500" />}
-              </Link>
-            )
-          })
+                >
+                  <item.icon
+                    className={cn(
+                      'h-5 w-5 transition-colors',
+                      isActive ? 'text-emerald-600' : 'text-slate-400 group-hover:text-slate-600'
+                    )}
+                  />
+                  {item.name}
+                  {isActive && <div className="ml-auto w-1.5 h-6 rounded-full bg-emerald-500" />}
+                </Link>
+              )
+            })}
+          </>
         )}
       </div>
 
@@ -231,6 +246,7 @@ function SidebarInner({
 export function Sidebar(props: {
   role?: string | null
   drogueriaNombre?: string | null
+  hasActiveTenant?: boolean
   onNavigate?: () => void
 }) {
   return (

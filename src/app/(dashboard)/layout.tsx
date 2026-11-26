@@ -15,11 +15,12 @@ export default async function DashboardLayout({
   const profile = session?.profile
   const userRole = profile?.role || 'vendedor'
   const isSuperAdmin = userRole === 'superadmin'
+  const hasActiveTenant = Boolean(profile?.drogueria_id)
 
-  const cajaAbierta = isSuperAdmin ? null : await getSesionCajaAbierta()
+  const cajaAbierta = isSuperAdmin && !hasActiveTenant ? null : await getSesionCajaAbierta()
 
   const drogueriaNombre = isSuperAdmin
-    ? 'TechPharmacy Plataforma'
+    ? profile?.drogueria?.nombre || 'TechPharmacy Plataforma'
     : profile?.drogueria?.nombre || 'TechPharmacy'
   const userName = profile?.full_name || session?.user?.email || 'Usuario'
 
@@ -27,7 +28,11 @@ export default async function DashboardLayout({
     <div className="flex h-screen bg-background overflow-hidden">
       {/* Desktop Sidebar */}
       <div className="hidden md:flex flex-shrink-0 border-r border-border">
-        <Sidebar role={userRole} drogueriaNombre={drogueriaNombre} />
+        <Sidebar
+          role={userRole}
+          drogueriaNombre={drogueriaNombre}
+          hasActiveTenant={hasActiveTenant}
+        />
       </div>
 
       {/* Main Content Area */}
@@ -35,22 +40,27 @@ export default async function DashboardLayout({
         {/* Top Header */}
         <header className="h-16 border-b border-border bg-white/80 backdrop-blur-md flex items-center justify-between px-4 md:px-8 z-20 shrink-0 gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <MobileNav role={userRole} drogueriaNombre={drogueriaNombre} />
+            <MobileNav
+              role={userRole}
+              drogueriaNombre={drogueriaNombre}
+              hasActiveTenant={hasActiveTenant}
+            />
             <span className="md:hidden font-black text-slate-900 text-base truncate">
               {drogueriaNombre}
             </span>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 ml-auto">
-            {isSuperAdmin ? (
+            {isSuperAdmin && (
               <Link
                 href="/droguerias"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black border bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100 transition-colors"
               >
                 <Globe className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Plataforma SaaS</span>
+                <span className="hidden sm:inline">Consola SuperAdmin</span>
               </Link>
-            ) : (
+            )}
+            {(!isSuperAdmin || hasActiveTenant) && (
               <Link
                 href="/facturas"
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black border transition-colors ${

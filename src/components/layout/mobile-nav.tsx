@@ -9,9 +9,11 @@ import { Sidebar } from '@/components/layout/sidebar'
 export function MobileNav({
   role,
   drogueriaNombre,
+  hasActiveTenant,
 }: {
   role?: string | null
   drogueriaNombre?: string | null
+  hasActiveTenant?: boolean
 }) {
   const [open, setOpen] = useState(false)
 
@@ -32,6 +34,7 @@ export function MobileNav({
         <Sidebar
           role={role}
           drogueriaNombre={drogueriaNombre}
+          hasActiveTenant={hasActiveTenant}
           onNavigate={() => setOpen(false)}
         />
       </SheetContent>

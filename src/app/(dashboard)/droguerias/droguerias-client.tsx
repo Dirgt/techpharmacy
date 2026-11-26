@@ -27,6 +27,7 @@ import {
   Crown,
   KeyRound,
   Terminal,
+  LogIn,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -66,7 +67,9 @@ import {
   DrogueriaOverview,
   PlatformOverviewData,
   PlatformUserOverview,
+  resetPlatformUserPassword,
   revokeApiKey,
+  switchSuperAdminWorkspace,
   toggleDrogueriaStatus,
   updateDrogueria,
 } from '@/app/actions/superadmin'
@@ -176,6 +179,9 @@ export function DrogueriasClient({
     role: 'vendedor' as 'superadmin' | 'admin' | 'vendedor',
     status: 'activo' as 'activo' | 'inactivo',
   })
+  const [newResetPassword, setNewResetPassword] = useState('')
+  const [savingResetPassword, setSavingResetPassword] = useState(false)
+  const [enteringDrogueriaId, setEnteringDrogueriaId] = useState<string | null>(null)
 
   const usersByDrogueria = useMemo(() => {
     const roleWeight: Record<string, number> = {
@@ -379,11 +385,47 @@ export function DrogueriasClient({
 
   const openAssignModal = (u: PlatformUserOverview) => {
     setEditingUser(u)
+    setNewResetPassword('')
     setAssignForm({
       drogueria_id: u.drogueria_id || data.droguerias[0]?.id || '',
       role: (u.role as 'superadmin' | 'admin' | 'vendedor') || 'vendedor',
       status: (u.status as 'activo' | 'inactivo') || 'activo',
     })
+  }
+
+  const handleEnterDrogueria = async (d: DrogueriaOverview) => {
+    setEnteringDrogueriaId(d.id)
+    const res = await switchSuperAdminWorkspace(d.id)
+    if (res.success) {
+      toast.success(`Entrando a ${d.nombre} en Modo Soporte`)
+      router.push('/dashboard')
+      router.refresh()
+    } else {
+      toast.error(res.error || 'No se pudo entrar a la droguería')
+      setEnteringDrogueriaId(null)
+    }
+  }
+
+  const handleResetUserPassword = async () => {
+    if (!editingUser) return
+    if (!newResetPassword || newResetPassword.length < 6) {
+      toast.error('La nueva contraseña debe tener al menos 6 caracteres')
+      return
+    }
+    setSavingResetPassword(true)
+    const res = await resetPlatformUserPassword({
+      user_id: editingUser.id,
+      password: newResetPassword,
+    })
+    if (res.success) {
+      toast.success(
+        `Contraseña actualizada para ${editingUser.full_name || editingUser.username}`
+      )
+      setNewResetPassword('')
+    } else {
+      toast.error(res.error || 'No se pudo actualizar la contraseña')
+    }
+    setSavingResetPassword(false)
   }
 
   const handleAssignUser = async (e: React.FormEvent) => {
@@ -488,7 +530,9 @@ export function DrogueriasClient({
             Consola de Plataforma & Droguerías
           </h1>
           <p className="text-slate-500 font-medium mt-1">
-            Administra sedes, URLs, administradores y el uso global de TechPharmacy.
+            Administra sedes, URLs, administradores y el uso global de TechPharmacy. Haz clic en{' '}
+            <strong className="text-emerald-700">&ldquo;Entrar al POS&rdquo;</strong> en cualquier
+            sede para abrir su mostrador con tu cuenta SuperAdmin.
           </p>
         </div>
 
@@ -678,7 +722,17 @@ export function DrogueriasClient({
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                      <Button
+                        size="sm"
+                        disabled={enteringDrogueriaId === d.id}
+                        onClick={() => handleEnterDrogueria(d)}
+                        title="Entrar al mostrador y panel de esta droguería con tu cuenta SuperAdmin"
+                        className="rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                      >
+                        <LogIn className="h-3.5 w-3.5 mr-1.5" />
+                        {enteringDrogueriaId === d.id ? 'Entrando...' : 'Entrar al POS'}
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
@@ -1556,6 +1610,32 @@ export function DrogueriasClient({
                       <SelectItem value="inactivo">Inactivo</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3.5 space-y-2.5">
+                <p className="text-[11px] font-black uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                  <KeyRound className="h-3.5 w-3.5 text-indigo-600" />
+                  Restablecer Contraseña Directamente
+                </p>
+                <div className="flex gap-2">
+                  <Input
+                    type="text"
+                    value={newResetPassword}
+                    onChange={(e) => setNewResetPassword(e.target.value)}
+                    placeholder="Escribe nueva clave (mín. 6 caracteres)"
+                    className="bg-white text-xs h-9"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={savingResetPassword || newResetPassword.trim().length < 6}
+                    onClick={handleResetUserPassword}
+                    className="shrink-0 h-9 text-xs font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                  >
+                    {savingResetPassword ? 'Cambiando...' : 'Cambiar Clave'}
+                  </Button>
                 </div>
               </div>
 

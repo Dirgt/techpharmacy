@@ -158,10 +158,13 @@ export async function updateSession(request: NextRequest) {
     }
 
     if (profile.role === 'superadmin') {
+      if (isLoginRoute || isSuspendedRoute || pathname === '/') {
+        const url = request.nextUrl.clone()
+        url.pathname = profile.drogueriaId ? '/dashboard' : '/droguerias'
+        return NextResponse.redirect(url)
+      }
       if (
-        isLoginRoute ||
-        isSuspendedRoute ||
-        pathname === '/' ||
+        !profile.drogueriaId &&
         TENANT_OPERATIONAL_ROUTES.some((route) => pathname.startsWith(route))
       ) {
         const url = request.nextUrl.clone()
