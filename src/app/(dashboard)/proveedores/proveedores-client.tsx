@@ -865,24 +865,24 @@ export default function ProveedoresClient({
           if (!open) setEditingId(null)
         }}
       >
-        <DialogContent className="sm:max-w-lg w-[calc(100vw-1.5rem)] p-0 rounded-3xl overflow-hidden border-0 shadow-2xl">
-          <div className="bg-gradient-to-r from-slate-900 via-emerald-950 to-teal-950 px-6 py-5 text-white">
+        <DialogContent className="sm:max-w-xl w-[calc(100vw-1.5rem)] max-h-[92vh] overflow-y-auto p-0 sm:p-0 gap-0 rounded-3xl border-0 shadow-2xl [&>button]:text-white [&>button]:opacity-80 [&>button]:hover:opacity-100">
+          <div className="bg-gradient-to-r from-slate-900 via-emerald-950 to-teal-950 px-6 py-4 rounded-t-3xl text-white">
             <DialogHeader>
-              <DialogTitle className="text-xl font-black text-white flex items-center gap-2.5">
-                <div className="rounded-xl bg-emerald-500/20 border border-emerald-400/30 p-2 text-emerald-300">
-                  <Building2 className="h-5 w-5" />
+              <DialogTitle className="text-lg sm:text-xl font-black text-white flex items-center gap-2.5 pr-6">
+                <div className="rounded-xl bg-emerald-500/20 border border-emerald-400/30 p-2 text-emerald-300 shrink-0">
+                  <Building2 className="h-4 w-4 sm:h-5 sm:w-5" />
                 </div>
                 {editingId ? 'Editar Ficha de Proveedor' : 'Registrar Nuevo Proveedor'}
               </DialogTitle>
-              <DialogDescription className="text-emerald-100/80 text-xs sm:text-sm">
-                Guarda los datos comerciales y tributarios de tu depósito o laboratorio aliado.
+              <DialogDescription className="text-emerald-100/80 text-xs">
+                Datos comerciales y plazo de crédito de tu distribuidor o laboratorio.
               </DialogDescription>
             </DialogHeader>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-6 space-y-4 bg-white">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-black uppercase tracking-wider text-slate-600">
+          <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-3.5 bg-white rounded-b-3xl">
+            <div className="space-y-1">
+              <Label className="text-[11px] font-black uppercase tracking-wider text-slate-600">
                 Nombre / Razón Social *
               </Label>
               <div className="relative">
@@ -890,16 +890,16 @@ export default function ProveedoresClient({
                 <Input
                   required
                   placeholder="Ej. Coopidrogas / Distribuidora Farmacéutica SAS"
-                  className="pl-10 h-11 rounded-xl border-slate-200 bg-slate-50/70 focus:bg-white font-bold"
+                  className="pl-10 h-10 rounded-xl border-slate-200 bg-slate-50/70 focus:bg-white font-bold"
                   value={formData.nombre}
                   onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-black uppercase tracking-wider text-slate-600">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-black uppercase tracking-wider text-slate-600">
                   NIT / Documento
                 </Label>
                 <div className="relative">
@@ -913,9 +913,9 @@ export default function ProveedoresClient({
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-xs font-black uppercase tracking-wider text-slate-600">
-                  Teléfono / WhatsApp Pedidos
+              <div className="space-y-1">
+                <Label className="text-[11px] font-black uppercase tracking-wider text-slate-600">
+                  Teléfono / WhatsApp
                 </Label>
                 <div className="relative">
                   <Phone className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-600" />
@@ -929,8 +929,8 @@ export default function ProveedoresClient({
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-xs font-black uppercase tracking-wider text-slate-600">
+            <div className="space-y-1">
+              <Label className="text-[11px] font-black uppercase tracking-wider text-slate-600">
                 Correo Electrónico Comercial
               </Label>
               <div className="relative">
@@ -945,19 +945,19 @@ export default function ProveedoresClient({
               </div>
             </div>
 
-            <div className="rounded-2xl bg-slate-50 border border-slate-200/80 p-4 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs font-black uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
-                  <Calendar className="h-3.5 w-3.5 text-emerald-600" />
-                  Plazo de Crédito Pactado (Días)
+            <div className="rounded-2xl bg-slate-50 border border-slate-200/80 p-3.5 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label className="text-[11px] font-black uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                  <Calendar className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                  Plazo de Crédito (Días)
                 </Label>
-                <div className="flex gap-1">
+                <div className="flex flex-wrap gap-1">
                   {['0', '15', '30', '60', '90'].map((preset) => (
                     <button
                       key={preset}
                       type="button"
                       onClick={() => setFormData({ ...formData, dias_credito: preset })}
-                      className={`px-2 py-0.5 rounded-lg text-[11px] font-black border transition-colors cursor-pointer ${
+                      className={`px-2.5 py-0.5 rounded-lg text-[11px] font-black border transition-colors cursor-pointer ${
                         formData.dias_credito === preset
                           ? 'bg-emerald-600 text-white border-emerald-600'
                           : 'bg-white text-slate-600 border-slate-200 hover:bg-emerald-50'
@@ -971,25 +971,25 @@ export default function ProveedoresClient({
               <Input
                 type="number"
                 min="0"
-                className="h-10 rounded-xl bg-white border-slate-200 font-bold"
+                className="h-9 rounded-xl bg-white border-slate-200 font-bold"
                 value={formData.dias_credito}
                 onChange={(e) => setFormData({ ...formData, dias_credito: e.target.value })}
               />
             </div>
 
-            <div className="pt-3 flex justify-end gap-2 border-t border-slate-100">
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => setIsModalOpen(false)}
-                className="rounded-xl"
+                className="rounded-xl h-10"
               >
                 Cancelar
               </Button>
               <Button
                 type="submit"
                 disabled={isSubmitting}
-                className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black px-6"
+                className="rounded-xl h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-black px-6"
               >
                 {isSubmitting ? 'Guardando...' : editingId ? 'Guardar Cambios' : 'Crear Proveedor'}
               </Button>

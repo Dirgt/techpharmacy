@@ -1065,13 +1065,13 @@ export default function ComprasClient({
           MODAL 1: REGISTRAR COMPRA E INGRESO MULTI-LOTE (ESTILO ENTERPRISE)
       ======================================================================== */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="max-w-5xl w-[calc(100vw-1.5rem)] max-h-[92vh] overflow-y-auto p-0 rounded-3xl border-0 shadow-2xl">
+        <DialogContent className="max-w-5xl w-[calc(100vw-1.5rem)] max-h-[92vh] overflow-y-auto p-0 sm:p-0 gap-0 rounded-3xl border-0 shadow-2xl [&>button]:text-white [&>button]:opacity-80 [&>button]:hover:opacity-100">
           {/* Header oscuro de lujo */}
-          <div className="bg-gradient-to-r from-slate-900 via-emerald-950 to-teal-950 px-6 py-5 text-white">
+          <div className="bg-gradient-to-r from-slate-900 via-emerald-950 to-teal-950 px-6 py-4 rounded-t-3xl text-white">
             <DialogHeader>
-              <DialogTitle className="text-xl font-black text-white flex items-center gap-2.5">
-                <div className="rounded-xl bg-emerald-500/20 border border-emerald-400/30 p-2 text-emerald-300">
-                  <ShoppingCart className="h-5 w-5" />
+              <DialogTitle className="text-lg sm:text-xl font-black text-white flex items-center gap-2.5 pr-6">
+                <div className="rounded-xl bg-emerald-500/20 border border-emerald-400/30 p-2 text-emerald-300 shrink-0">
+                  <ShoppingCart className="h-4 w-4 sm:h-5 sm:w-5" />
                 </div>
                 Registrar Factura de Compra & Recepción por Lote
               </DialogTitle>
@@ -1081,7 +1081,7 @@ export default function ComprasClient({
             </DialogHeader>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-6 space-y-5 bg-white">
+          <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-5 bg-white rounded-b-3xl">
             {/* Alerta contextual solo si eligió Efectivo y la caja está cerrada */}
             {estadoPago === 'pagado' && metodoPago === 'efectivo' && !cajaEstaAbierta && (
               <div className="rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 p-3.5 flex items-start gap-3 text-xs font-medium">
