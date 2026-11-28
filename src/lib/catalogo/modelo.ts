@@ -9,6 +9,7 @@ import {
   computeSellableStockFromLots,
   type NormalizedLoteStock,
 } from '../inventario/fraccionamiento.ts'
+import { claveBusqueda } from './busqueda.ts'
 
 export interface CatalogoLote {
   id: string
@@ -241,7 +242,7 @@ export interface FilaPOS extends FilaInventario {
   cajas_fisicas: number
   blisters_fisicos: number
   unidades_fisicas: number
-  /** Texto en minúsculas para la búsqueda del POS (nombre, código, laboratorio, molécula, sección). */
+  /** Texto sin tildes ni mayúsculas para la búsqueda del POS (nombre, código, laboratorio, molécula, sección). */
   busqueda: string
 }
 
@@ -320,9 +321,13 @@ export function aFilaPOS(item: CatalogoItem, hoy: string): FilaPOS {
     lotes_activos: resumen.lotes_ordenados,
     tiene_stock_vencido: resumen.tiene_stock_vencido,
     todo_vencido: resumen.todo_vencido,
-    busqueda: [item.nombre_producto, item.codigo, item.laboratorio, item.principio_activo, item.seccion]
-      .map((v) => (v || '').toLowerCase())
-      .join('\u0001'),
+    busqueda: claveBusqueda([
+      item.nombre_producto,
+      item.codigo,
+      item.laboratorio,
+      item.principio_activo,
+      item.seccion,
+    ]),
   }
 }
 

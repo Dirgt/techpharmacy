@@ -12,10 +12,14 @@ export function useBarcodeScanner(onScan: (barcode: string) => void) {
       // We will capture anyway if it's very fast.
 
       if (e.key === 'Enter') {
-        if (buffer.current.length > 3) {
+        const codigo = buffer.current
+        buffer.current = ''
+        // Si un campo ya atendió el Enter (por ejemplo, el buscador del POS
+        // agregó el producto), no se procesa otra vez: evita agregarlo doble.
+        if (e.defaultPrevented) return
+        if (codigo.length > 3) {
           // It's likely a barcode scan
-          onScan(buffer.current)
-          buffer.current = ''
+          onScan(codigo)
           e.preventDefault()
         }
       } else if (e.key.length === 1) { // Normal printable characters

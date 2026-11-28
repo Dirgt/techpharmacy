@@ -12,5 +12,7 @@ export function FacturacionLoader({
   const catalogo = useCatalogo(drogueriaId)
   const inventario = useFilasPOS(catalogo.items)
 
-  return <FacturacionClient {...props} inventario={inventario} catalogo={catalogo} />
+  return (
+    <FacturacionClient {...props} drogueriaId={drogueriaId} inventario={inventario} catalogo={catalogo} />
+  )
 }

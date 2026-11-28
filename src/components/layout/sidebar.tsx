@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { logout } from '@/app/actions/auth'
 import { limpiarCatalogoLocal } from '@/lib/catalogo/store'
+import { borrarTodasLasVentasEnEspera } from '@/lib/pos/ventas-en-espera'
 
 const tenantNavigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, adminOnly: false },
@@ -235,7 +236,8 @@ function SidebarInner({
         </Link>
         <button
           onClick={async () => {
-            // No deja el catálogo de la droguería guardado en el equipo.
+            // No deja el catálogo ni carritos en espera (con datos de clientes) en el equipo.
+            borrarTodasLasVentasEnEspera(window.localStorage)
             await limpiarCatalogoLocal().catch(() => undefined)
             await logout()
           }}
