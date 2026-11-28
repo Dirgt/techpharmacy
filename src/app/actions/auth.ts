@@ -4,14 +4,18 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { requireActiveUser, requireAdmin } from '@/lib/auth/session'
+import { mensajeErrorBD } from '@/lib/errors'
 import { isTenantSuspended } from '@/lib/tenant/domain'
 import { resolveTenantWithSupabase } from '@/lib/tenant/resolve'
 import { primeMiddlewareProfileCache } from '@/lib/supabase/middleware'
 import {
-  checkLoginRateLimit,
-  clearLoginAttempts,
-  recordFailedLoginAttempt,
-} from '@/lib/auth/login-rate-limit'
+  checkDistributedLoginRateLimit,
+  clearDistributedLoginFailures,
+  hashLoginRateLimitKey,
+  recordDistributedLoginFailure,
+} from '@/lib/auth/distributed-login-rate-limit'
 
 export async function login(formData: FormData) {
   const email = (formData.get('email') as string | null)?.trim() || ''
@@ -27,9 +31,9 @@ export async function login(formData: FormData) {
     headersList.get('x-forwarded-for')?.split(',')[0]?.trim() ||
     headersList.get('x-real-ip') ||
     'local'
-  const rateLimitKey = `${email.toLowerCase()}:${ip}`
+  const rateLimitKey = hashLoginRateLimitKey(email, ip)
 
-  const limitCheck = checkLoginRateLimit(rateLimitKey)
+  const limitCheck = await checkDistributedLoginRateLimit(rateLimitKey)
   if (!limitCheck.allowed) {
     const minutos = Math.max(1, Math.ceil(limitCheck.retryAfterSeconds / 60))
     return {
@@ -45,15 +49,12 @@ export async function login(formData: FormData) {
   })
 
   if (error || !data.user) {
-    recordFailedLoginAttempt(rateLimitKey)
-    const msg = error?.message || ''
-    if (msg && !msg.toLowerCase().includes('invalid login credentials')) {
-      return { error: `Error de autenticación: ${msg}` }
-    }
+    await recordDistributedLoginFailure(rateLimitKey)
+    if (error) console.error('Error de autenticación:', error)
     return { error: 'Credenciales inválidas o cuenta inactiva' }
   }
 
-  clearLoginAttempts(rateLimitKey)
+  await clearDistributedLoginFailures(rateLimitKey)
 
   const [{ data: profile }, hostTenant] = await Promise.all([
     supabase
@@ -77,10 +78,17 @@ export async function login(formData: FormData) {
 
   if (profile.role === 'superadmin') {
     if (hostTenant) {
-      await supabase
+      const adminClient = createAdminClient()
+      const { error: workspaceError } = await adminClient
         .from('profiles')
         .update({ drogueria_id: hostTenant.id, updated_at: new Date().toISOString() })
         .eq('id', data.user.id)
+        .eq('role', 'superadmin')
+      if (workspaceError) {
+        console.error('No se pudo asignar la sede del superadmin:', workspaceError)
+        await supabase.auth.signOut()
+        return { error: 'No se pudo abrir la sede seleccionada.' }
+      }
       primeMiddlewareProfileCache(data.user.id, {
         role: 'superadmin',
         status: profile.status,
@@ -142,10 +150,13 @@ export async function logout() {
 }
 
 export async function changeOwnPassword(password: string) {
+  const auth = await requireActiveUser()
+  if (!auth.ok) return { error: auth.error }
+
   const supabase = await createClient()
 
-  if (!password || password.length < 6) {
-    return { error: 'La contraseña debe tener al menos 6 caracteres' }
+  if (!password || password.length < 8 || password.length > 72) {
+    return { error: 'La contraseña debe tener entre 8 y 72 caracteres' }
   }
 
   const { error } = await supabase.auth.updateUser({
@@ -153,7 +164,15 @@ export async function changeOwnPassword(password: string) {
   })
 
   if (error) {
-    return { error: error.message }
+    console.error('Error cambiando la contraseña:', error)
+    return {
+      error:
+        error.code === 'same_password'
+          ? 'La nueva contraseña debe ser distinta a la actual.'
+          : error.code === 'weak_password'
+            ? 'La contraseña es muy débil. Usa al menos 8 caracteres combinando letras y números.'
+            : 'No se pudo cambiar la contraseña. Inténtalo de nuevo.',
+    }
   }
 
   return { success: true }
@@ -168,6 +187,9 @@ export async function updateOwnDrogueriaFiscal(input: {
   prefijo_factura?: string | null
   resolucion_dian?: string | null
 }) {
+  const auth = await requireAdmin()
+  if (!auth.ok) return { error: auth.error }
+
   const supabase = await createClient()
   const { error } = await supabase.rpc('actualizar_datos_fiscales_sede', {
     p_nit: input.nit?.trim() || '',
@@ -180,7 +202,8 @@ export async function updateOwnDrogueriaFiscal(input: {
   })
 
   if (error) {
-    return { error: error.message }
+    console.error('Error actualizando datos fiscales:', error)
+    return { error: mensajeErrorBD(error, 'No se pudieron guardar los datos de la sede.') }
   }
 
   revalidatePath('/configuracion')

@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Archivos locales de inspección y pruebas de Supabase (pueden contener datos)
+supabase/.temp/

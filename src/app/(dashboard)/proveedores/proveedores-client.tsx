@@ -326,7 +326,7 @@ export default function ProveedoresClient({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-            <Link
+            <Link prefetch={false}
               href="/compras"
               className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs sm:text-sm font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20"
             >
@@ -1015,7 +1015,7 @@ export default function ProveedoresClient({
                 {historySupplier?.nombre}
               </span>
               {historySupplier && (
-                <Link
+                <Link prefetch={false}
                   href="/compras"
                   className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 text-xs font-black text-white"
                 >

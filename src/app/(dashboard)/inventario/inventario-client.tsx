@@ -23,9 +23,11 @@ import {
 import type { NormalizedLoteStock } from '@/lib/inventario/fraccionamiento'
 import { Database } from '@/lib/supabase/database.types'
 import { calculatePV, formatCurrency } from '@/lib/utils'
+import type { UpsertInventarioInput } from '@/lib/validations/inventario.schema'
 
 type InventarioRow = Database['public']['Views']['vista_inventario_completo']['Row'] & {
   requiere_formula?: boolean
+  iva_porcentaje?: number
   lotes_activos?: NormalizedLoteStock[]
   tiene_stock_vencido?: boolean
   todo_vencido?: boolean
@@ -35,6 +37,8 @@ type LaboratorioRow = Database['public']['Tables']['laboratorios']['Row']
 interface InventarioClientProps {
   initialData: InventarioRow[]
   laboratorios: LaboratorioRow[]
+  /** Se llama tras guardar, importar o dar de baja (el catálogo local se pone al día). */
+  onDatosCambiados?: () => void
 }
 
 // --- COMPONENTE NUMERICO MEJORADO ---
@@ -157,8 +161,9 @@ const PVPInput = ({ label, cost, margin, marginKey, setFormData, calculatePV }: 
   );
 }
 
-export default function InventarioClient({ initialData, laboratorios }: InventarioClientProps) {
+export default function InventarioClient({ initialData, laboratorios, onDatosCambiados }: InventarioClientProps) {
   const router = useRouter()
+  const refrescar = () => (onDatosCambiados ? onDatosCambiados() : router.refresh())
   const [data, setData] = useState(initialData)
 
   useEffect(() => {
@@ -192,7 +197,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
   const [esProductoUnico, setEsProductoUnico] = useState(false)
 
   // Estado del Formulario Robusto
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<UpsertInventarioInput>({
     id: '', producto_id: '', codigo: '', nombre: '', principio_activo: '', laboratorio_id: '',
     fecha_vencimiento: '',
     cajas: 0, blisters: 0, unidades: 0,
@@ -210,6 +215,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
     ubicacion: '',
     stock_minimo: 2,
     requiere_formula: false,
+    iva_porcentaje: 0,
   })
 
 
@@ -350,7 +356,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
         setImportRows([])
         setImportErrors([])
         setImportFileName('')
-        router.refresh()
+        refrescar()
       } else {
         toast.error(res.errores[0] || 'No se pudieron importar los productos')
       }
@@ -427,6 +433,9 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       ubicacion: item.ubicacion || '',
       stock_minimo: item.stock_minimo || 2,
       requiere_formula: Boolean(item.requiere_formula),
+      iva_porcentaje: ([0, 5, 19].includes(Number(item.iva_porcentaje))
+        ? Number(item.iva_porcentaje)
+        : 0) as 0 | 5 | 19,
     })
     setEsProductoUnico(false)
     toast.success('Producto cargado con éxito')
@@ -440,7 +449,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
       if (result.success) {
         toast.success('Inventario guardado con éxito')
         setIsModalOpen(false)
-        router.refresh()
+        refrescar()
       } else {
         toast.error(result.error || 'Error al guardar')
       }
@@ -597,7 +606,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                 blisters_por_caja: 1, unidades_por_blister: 1,
                 precio_caja: 0, precio_blister: 0, precio_unidad: 0,
                 porcentaje_ganancia: 20, margen_blister: 20, margen_unidad: 30,
-                lote: '', registro_invima: '', seccion: '', ubicacion: '', stock_minimo: 2, requiere_formula: false
+                lote: '', registro_invima: '', seccion: '', ubicacion: '', stock_minimo: 2, requiere_formula: false, iva_porcentaje: 0
               })
               setEsProductoUnico(false)
               setIsModalOpen(true)
@@ -839,12 +848,12 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                       type="text"
                       placeholder="Ej. Acetaminofén, Ibuprofeno..."
                       className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm"
-                      value={formData.principio_activo}
+                      value={formData.principio_activo ?? ''}
                       onChange={(e) => handleInputChange('principio_activo', e.target.value)}
                     />
                     <p className="text-[10px] font-medium text-slate-500 italic mt-1">Corresponde a la molécula principal (ej. Acetaminofén) para diferenciar del nombre de marca (Dolex).</p>
                   </div>
-                  <div className="col-span-1 md:col-span-3 pt-1">
+                  <div className="col-span-1 md:col-span-3 pt-1 grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                     <label className="inline-flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors">
                       <input
                         type="checkbox"
@@ -860,6 +869,23 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                           Mostrará alerta preventiva al vendedor en el punto de venta antes de facturar.
                         </span>
                       </div>
+                    </label>
+                    <label className="px-4 py-3 rounded-xl border border-slate-200 bg-slate-50">
+                      <span className="text-xs font-black text-slate-800 uppercase block mb-2">
+                        Tarifa de IVA del producto
+                      </span>
+                      <select
+                        value={Number(formData.iva_porcentaje || 0)}
+                        onChange={(e) => handleInputChange('iva_porcentaje', Number(e.target.value))}
+                        className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-sm font-bold outline-none focus:border-indigo-600"
+                      >
+                        <option value={0}>0% — Excluido / exento</option>
+                        <option value={5}>5%</option>
+                        <option value={19}>19%</option>
+                      </select>
+                      <span className="text-[10px] font-medium text-slate-500 mt-1 block">
+                        Confirma la tarifa con el responsable contable de la droguería.
+                      </span>
                     </label>
                   </div>
                 </div>
@@ -888,7 +914,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Sección / Categoría <span className="text-rose-500">*</span></label>
-                    <select required className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.seccion} onChange={e => handleInputChange('seccion', e.target.value)}>
+                    <select required className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.seccion ?? ''} onChange={e => handleInputChange('seccion', e.target.value)}>
                       <option value="">Seleccionar Sección...</option>
                       {SECCIONES.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
@@ -898,21 +924,21 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="space-y-2">
                     <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Lote No.</label>
-                    <input type="text" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.lote} onChange={e => handleInputChange('lote', e.target.value)} placeholder="Ej: L9082..." />
+                    <input type="text" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.lote ?? ''} onChange={e => handleInputChange('lote', e.target.value)} placeholder="Ej: L9082..." />
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Reg. INVIMA</label>
-                    <input type="text" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.registro_invima} onChange={e => handleInputChange('registro_invima', e.target.value)} placeholder="Ej: 2023M..." />
+                    <input type="text" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.registro_invima ?? ''} onChange={e => handleInputChange('registro_invima', e.target.value)} placeholder="Ej: 2023M..." />
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Vencimiento <span className="text-rose-500">*</span></label>
-                    <input type="date" required className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.fecha_vencimiento} onChange={e => handleInputChange('fecha_vencimiento', e.target.value)} />
+                    <input type="date" required className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.fecha_vencimiento ?? ''} onChange={e => handleInputChange('fecha_vencimiento', e.target.value)} />
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Ubicación Detallada (Módulo/Estante)</label>
-                  <input type="text" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.ubicacion} onChange={e => handleInputChange('ubicacion', e.target.value)} placeholder="Ej: Módulo A - Fila 2" />
+                  <input type="text" className="w-full p-3 bg-white border border-slate-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-600/20 focus:border-indigo-600 outline-none transition-all shadow-sm" value={formData.ubicacion ?? ''} onChange={e => handleInputChange('ubicacion', e.target.value)} placeholder="Ej: Módulo A - Fila 2" />
                 </div>
 
                 <div className="flex items-center gap-3 bg-indigo-50 p-4 rounded-xl border border-indigo-100">
@@ -1365,7 +1391,7 @@ export default function InventarioClient({ initialData, laboratorios }: Inventar
                                   toast.success(`Lote ${loteItem.lote} dado de baja correctamente`)
                                   setLotesModalProduct(null)
                                   setConfirmingBajaLoteId(null)
-                                  router.refresh()
+                                  refrescar()
                                 } else {
                                   toast.error(res.error || 'No se pudo dar de baja el lote')
                                 }

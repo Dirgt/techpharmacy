@@ -1,3 +1,4 @@
+import './zod-es.ts'
 import { z } from 'zod'
 
 export const ProveedorSchema = z.object({

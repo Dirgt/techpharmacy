@@ -18,6 +18,36 @@ type DrogueriaInfo = {
 
 type PrintFormat = '80mm' | '58mm' | 'carta'
 
+const safeNumber = (value: unknown) => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+const formatCop = (value: unknown) =>
+  new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(safeNumber(value))
+
+const parseLocalDate = (value: unknown) => {
+  if (!value) return null
+  const raw = String(value)
+  const parsed = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00` : raw)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+const formatDate = (value: unknown) => {
+  const parsed = parseLocalDate(value)
+  return parsed ? parsed.toLocaleDateString('es-CO') : '—'
+}
+
+const formatDateTime = (value: unknown) => {
+  const parsed = parseLocalDate(value)
+  return parsed ? parsed.toLocaleString('es-CO') : '—'
+}
+
 export default function PrintClient({
   factura,
   detalles,
@@ -40,50 +70,51 @@ export default function PrintClient({
     ? `${drogueria.prefijo_factura}-${factura.numero}`
     : `${factura.numero}`
   const isMixto = factura.metodo_pago === 'mixto'
-  const pagoEf = Number(factura.pago_efectivo || 0)
-  const pagoTj = Number(factura.pago_tarjeta || 0)
-  const pagoTr = Number(factura.pago_transferencia || 0)
+  const pagoEf = safeNumber(factura.pago_efectivo)
+  const pagoTj = safeNumber(factura.pago_tarjeta)
+  const pagoTr = safeNumber(factura.pago_transferencia)
   const mixtoTexto = isMixto
     ? [
-        pagoEf > 0 ? `Efec: $${pagoEf.toLocaleString()}` : '',
-        pagoTr > 0 ? `Transf: $${pagoTr.toLocaleString()}` : '',
-        pagoTj > 0 ? `Tarj: $${pagoTj.toLocaleString()}` : '',
+        pagoEf > 0 ? `Efec: ${formatCop(pagoEf)}` : '',
+        pagoTr > 0 ? `Transf: ${formatCop(pagoTr)}` : '',
+        pagoTj > 0 ? `Tarj: ${formatCop(pagoTj)}` : '',
       ]
         .filter(Boolean)
         .join(' | ')
     : ''
 
-  const lineasCalculadas = detalles.map((d) => {
-    const isDiscounted = factura.descuento_porcentaje > 0
-    const subtotalConDescuento = Number(d.precio_unitario)
-
-    const rawPrecioBase = isDiscounted
-      ? subtotalConDescuento / (1 - factura.descuento_porcentaje / 100)
-      : subtotalConDescuento
-
-    const precioBaseRow = Math.round(rawPrecioBase * 100) / 100
-    const descuentoRow = Math.round((precioBaseRow - subtotalConDescuento) * 100) / 100
+  const lineasCalculadas = detalles.map((detalle) => {
+    const subtotalConDescuento = safeNumber(detalle.precio_unitario)
+    const precioBaseRow = safeNumber(
+      detalle.precio_linea_original ?? detalle.precio_unitario_base ?? subtotalConDescuento
+    )
+    const descuentoRow = safeNumber(
+      detalle.descuento_monto ?? Math.max(0, precioBaseRow - subtotalConDescuento)
+    )
 
     return {
-      ...d,
+      ...detalle,
       precioBaseRow,
       descuentoRow,
       subtotalConDescuento,
     }
   })
 
-  const totalSinDescuentoCalculado = lineasCalculadas.reduce(
-    (acc, curr) => acc + curr.precioBaseRow,
-    0
-  )
-  const totalDescuentoCalculado = lineasCalculadas.reduce(
-    (acc, curr) => acc + curr.descuentoRow,
-    0
-  )
-  const ivaCalculado = Number(factura.iva_total || 0)
-  const totalFinalCalculado =
-    totalSinDescuentoCalculado - totalDescuentoCalculado + ivaCalculado
-  const totalSinDescuentoConIva = totalSinDescuentoCalculado + ivaCalculado
+  const totalSinDescuentoCalculado = safeNumber(factura.subtotal_bruto)
+  const totalDescuentoCalculado = safeNumber(factura.descuento_monto)
+  const ivaCalculado = safeNumber(factura.iva_total)
+  const totalFinalCalculado = safeNumber(factura.total)
+  // Total sin el descuento de pronto pago: el IVA también se calcula sobre la base sin descuento.
+  const baseConDescuento = totalSinDescuentoCalculado - totalDescuentoCalculado
+  const ivaSinDescuento =
+    baseConDescuento > 0
+      ? Math.round((ivaCalculado * totalSinDescuentoCalculado) / baseConDescuento)
+      : ivaCalculado
+  const totalSinDescuentoConIva = totalSinDescuentoCalculado + ivaSinDescuento
+  const ivaPorcentaje = safeNumber(factura.iva_porcentaje)
+  const ivaLabel = ivaCalculado > 0 && ivaPorcentaje === 0
+    ? 'IVA por producto'
+    : `IVA (${ivaPorcentaje}%)`
 
   const handleSendWhatsApp = () => {
     const drogueriaNombre = drogueria?.nombre || 'TechPharmacy'
@@ -96,7 +127,7 @@ export default function PrintClient({
         ]
           .filter(Boolean)
           .join(' ')
-        return `- ${cant} ${l.producto?.nombre || 'Producto'}: $${l.subtotalConDescuento.toLocaleString()}`
+        return `- ${cant} ${l.producto?.nombre || 'Producto'}: ${formatCop(l.subtotalConDescuento)}`
       })
       .join('\n')
 
@@ -104,7 +135,7 @@ export default function PrintClient({
       `*${drogueriaNombre}*`,
       drogueria?.nit ? `NIT: ${drogueria.nit}` : '',
       `Comprobante *${drogueria?.prefijo_factura ? numeroFormateado : `#${numeroFormateado}`}*`,
-      `Fecha: ${new Date(factura.created_at).toLocaleString()}`,
+      `Fecha: ${formatDateTime(factura.created_at)}`,
       `Cliente: ${factura.cliente_nombre || 'Consumidor Final'}`,
       `Condición: ${String(factura.tipo_venta || 'contado').toUpperCase()} (${isMixto ? `MIXTO: ${mixtoTexto}` : factura.metodo_pago || 'efectivo'})`,
       '',
@@ -112,12 +143,12 @@ export default function PrintClient({
       itemsTexto,
       '',
       factura.descuento_porcentaje > 0
-        ? `Descuento (${factura.descuento_porcentaje}%): -$${totalDescuentoCalculado.toLocaleString()}`
+        ? `Descuento (${factura.descuento_porcentaje}%): -${formatCop(totalDescuentoCalculado)}`
         : '',
-      Number(factura.iva_total || 0) > 0
-        ? `IVA (${factura.iva_porcentaje}%): $${ivaCalculado.toLocaleString()}`
+      safeNumber(factura.iva_total) > 0
+        ? `${ivaLabel}: ${formatCop(ivaCalculado)}`
         : '',
-      `*TOTAL: $${totalFinalCalculado.toLocaleString()}*`,
+      `*TOTAL: ${formatCop(totalFinalCalculado)}*`,
       '',
       drogueria?.mensaje_pie_factura || '¡Gracias por su compra!',
     ]
@@ -167,7 +198,7 @@ export default function PrintClient({
       <div className="w-full max-w-4xl bg-slate-900 px-5 py-4 flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4 print:hidden rounded-2xl shadow-xl">
         <div>
           <h2 className="text-white font-black text-lg">
-            Factura {drogueria?.prefijo_factura ? numeroFormateado : `#${numeroFormateado}`}
+            Comprobante interno de venta {drogueria?.prefijo_factura ? numeroFormateado : `#${numeroFormateado}`}
           </h2>
           <p className="text-slate-400 text-xs font-bold">
             Elige formato tirilla POS o carta, o envía el recibo por WhatsApp
@@ -264,7 +295,7 @@ export default function PrintClient({
 
             <div className="border-b border-dashed border-slate-400 pb-2 mb-2 space-y-0.5 text-[10px]">
               <div className="flex justify-between font-black">
-                <span>FACTURA POS</span>
+                <span>COMPROBANTE INTERNO DE VENTA</span>
                 <span>N° {numeroFormateado}</span>
               </div>
               {drogueria?.resolucion_dian && (
@@ -272,7 +303,7 @@ export default function PrintClient({
                   {drogueria.resolucion_dian}
                 </p>
               )}
-              <p>Fecha: {new Date(factura.created_at).toLocaleString()}</p>
+              <p>Fecha: {formatDateTime(factura.created_at)}</p>
               <p>Vendedor: {factura.vendedor?.full_name || 'Mostrador'}</p>
               <p className="truncate">Cliente: {factura.cliente_nombre}</p>
               {factura.cliente_documento && <p>Doc: {factura.cliente_documento}</p>}
@@ -283,7 +314,7 @@ export default function PrintClient({
                 <p className="text-[9px] font-bold">Desglose: {mixtoTexto}</p>
               )}
               {isCredito && factura.fecha_vencimiento && (
-                <p>Vence: {new Date(factura.fecha_vencimiento).toLocaleDateString()}</p>
+                <p>Vence: {formatDate(factura.fecha_vencimiento)}</p>
               )}
             </div>
 
@@ -307,7 +338,7 @@ export default function PrintClient({
                           .join(' ')}
                       </span>
                       <span className="font-black">
-                        ${linea.subtotalConDescuento.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        {formatCop(linea.subtotalConDescuento)}
                       </span>
                     </div>
                   </div>
@@ -318,29 +349,23 @@ export default function PrintClient({
             <div className="space-y-0.5 border-b border-dashed border-slate-400 pb-2 mb-2 text-[10px]">
               <div className="flex justify-between">
                 <span>Subtotal</span>
-                <span>
-                  ${totalSinDescuentoCalculado.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                </span>
+                <span>{formatCop(totalSinDescuentoCalculado)}</span>
               </div>
               {factura.descuento_porcentaje > 0 && (
                 <div className="flex justify-between font-bold">
                   <span>Dcto (-{factura.descuento_porcentaje}%)</span>
-                  <span>
-                    -${totalDescuentoCalculado.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                  </span>
+                  <span>-{formatCop(totalDescuentoCalculado)}</span>
                 </div>
               )}
               {ivaCalculado > 0 && (
                 <div className="flex justify-between">
-                  <span>IVA ({factura.iva_porcentaje}%)</span>
-                  <span>+${ivaCalculado.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                  <span>{ivaLabel}</span>
+                  <span>+{formatCop(ivaCalculado)}</span>
                 </div>
               )}
               <div className="flex justify-between text-sm font-black pt-1 border-t border-slate-400">
                 <span>TOTAL</span>
-                <span>
-                  ${totalFinalCalculado.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                </span>
+                <span>{formatCop(totalFinalCalculado)}</span>
               </div>
             </div>
 
@@ -349,6 +374,9 @@ export default function PrintClient({
                 <p className="font-bold">{drogueria.mensaje_pie_factura}</p>
               )}
               <p className="font-black uppercase">¡Gracias por su compra!</p>
+              <p className="text-[8px] text-slate-500">
+                Documento interno — no válido como factura electrónica ni documento equivalente electrónico.
+              </p>
               <p className="text-slate-500">Sistema {drogueria?.nombre || 'TechPharmacy'}</p>
             </div>
           </div>
@@ -380,7 +408,7 @@ export default function PrintClient({
               </div>
               <div className="text-right">
                 <h2 className="text-4xl print:text-2xl font-black text-indigo-600 tracking-tighter leading-none">
-                  FACTURA
+                  COMPROBANTE INTERNO DE VENTA
                 </h2>
                 <div className="inline-block bg-slate-900 text-white px-4 py-1.5 print:py-0.5 rounded-lg mt-2 mb-4 print:mt-1 print:mb-2">
                   <span className="font-black text-lg print:text-sm">N° {numeroFormateado}</span>
@@ -393,7 +421,7 @@ export default function PrintClient({
                 <p className="text-sm print:text-[10px] font-black text-slate-900">
                   Fecha:{' '}
                   <span className="font-bold text-slate-600">
-                    {new Date(factura.created_at).toLocaleDateString()}
+                    {formatDate(factura.created_at)}
                   </span>
                 </p>
                 <p className="text-sm print:text-[10px] font-black text-slate-900">
@@ -457,7 +485,7 @@ export default function PrintClient({
                           Vencimiento
                         </p>
                         <p className="text-sm print:text-[10px] font-black text-slate-900 uppercase">
-                          {new Date(factura.fecha_vencimiento).toLocaleDateString()}
+                          {formatDate(factura.fecha_vencimiento)}
                         </p>
                       </div>
                     </>
@@ -509,29 +537,17 @@ export default function PrintClient({
                         </p>
                       </td>
                       <td className="px-4 py-4 print:py-2 align-middle text-right font-bold text-slate-600">
-                        $
-                        {linea.precioBaseRow.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
+                        {formatCop(linea.precioBaseRow)}
                       </td>
                       {factura.descuento_porcentaje > 0 && (
                         <td className="px-4 py-4 print:py-2 align-middle text-right">
                           <p className="font-black text-rose-600">
-                            -$
-                            {linea.descuentoRow.toLocaleString(undefined, {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}
+                            -{formatCop(linea.descuentoRow)}
                           </p>
                         </td>
                       )}
                       <td className="px-4 py-4 print:py-2 align-middle text-right font-black text-indigo-900 text-base print:text-[11px]">
-                        $
-                        {linea.subtotalConDescuento.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
+                        {formatCop(linea.subtotalConDescuento)}
                       </td>
                     </tr>
                   ))}
@@ -544,37 +560,19 @@ export default function PrintClient({
               <div className="w-72 print:w-64 flex flex-col gap-3 print:gap-1">
                 <div className="flex justify-between items-center text-sm print:text-[10px] font-bold text-slate-600">
                   <span>Total sin descuento</span>
-                  <span>
-                    $
-                    {totalSinDescuentoCalculado.toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                  </span>
+                  <span>{formatCop(totalSinDescuentoCalculado)}</span>
                 </div>
 
                 {factura.descuento_porcentaje > 0 && (
                   <div className="flex justify-between items-center text-sm print:text-[10px] font-black text-rose-600 border-b border-rose-100 pb-2 print:pb-0.5">
                     <span>Descuento Global (-{factura.descuento_porcentaje}%)</span>
-                    <span>
-                      -$
-                      {totalDescuentoCalculado.toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </span>
+                    <span>-{formatCop(totalDescuentoCalculado)}</span>
                   </div>
                 )}
 
                 <div className="flex justify-between items-center text-sm print:text-[10px] font-bold text-slate-600">
-                  <span>Impuestos (IVA {factura.iva_porcentaje}%)</span>
-                  <span>
-                    +$
-                    {Number(factura.iva_total).toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                  </span>
+                  <span>{ivaLabel}</span>
+                  <span>+{formatCop(ivaCalculado)}</span>
                 </div>
 
                 <div className="flex justify-between items-end border-t-4 border-slate-900 pt-4 mt-2 print:pt-2 print:mt-1">
@@ -582,11 +580,7 @@ export default function PrintClient({
                     TOTAL
                   </span>
                   <span className="text-3xl print:text-xl font-black tracking-tighter text-indigo-600">
-                    $
-                    {totalFinalCalculado.toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
+                    {formatCop(totalFinalCalculado)}
                   </span>
                 </div>
               </div>
@@ -602,7 +596,7 @@ export default function PrintClient({
                   <p className="text-amber-700 text-xs print:text-[10px] font-medium leading-tight">
                     Si paga antes o el mismo{' '}
                     <span className="font-black text-amber-900">
-                      {new Date(factura.fecha_vencimiento).toLocaleDateString()}
+                      {formatDate(factura.fecha_vencimiento)}
                     </span>
                     , aplica su descuento del{' '}
                     <span className="font-black text-amber-900">
@@ -610,20 +604,12 @@ export default function PrintClient({
                     </span>{' '}
                     y solo paga{' '}
                     <span className="font-black text-indigo-700">
-                      $
-                      {totalFinalCalculado.toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
+                      {formatCop(totalFinalCalculado)}
                     </span>
                     .<br />
                     De lo contrario, el total será{' '}
                     <span className="font-black text-rose-600">
-                      $
-                      {totalSinDescuentoConIva.toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
+                      {formatCop(totalSinDescuentoConIva)}
                     </span>
                     .
                   </p>
@@ -639,7 +625,7 @@ export default function PrintClient({
                 ¡Gracias por su compra!
               </p>
               <p className="text-xs print:text-[10px] font-medium text-slate-500">
-                Esta factura es un título valor según la ley colombiana.
+                Documento interno — no válido como factura electrónica ni documento equivalente electrónico.
               </p>
               <p className="text-[9px] print:text-[8px] font-bold text-slate-400 mt-4 print:mt-1">
                 Impreso por {drogueria?.nombre || 'TechPharmacy'} POS

@@ -389,7 +389,8 @@ export function DrogueriasClient({
     setAssignForm({
       drogueria_id: u.drogueria_id || data.droguerias[0]?.id || '',
       role: (u.role as 'superadmin' | 'admin' | 'vendedor') || 'vendedor',
-      status: (u.status as 'activo' | 'inactivo') || 'activo',
+      // Las cuentas "sin_perfil" se proponen activas al asignarles droguería.
+      status: u.status === 'inactivo' ? 'inactivo' : 'activo',
     })
   }
 
@@ -408,8 +409,8 @@ export function DrogueriasClient({
 
   const handleResetUserPassword = async () => {
     if (!editingUser) return
-    if (!newResetPassword || newResetPassword.length < 6) {
-      toast.error('La nueva contraseña debe tener al menos 6 caracteres')
+    if (!newResetPassword || newResetPassword.length < 8) {
+      toast.error('La nueva contraseña debe tener al menos 8 caracteres')
       return
     }
     setSavingResetPassword(true)
@@ -1052,17 +1053,19 @@ export function DrogueriasClient({
                           ) : (
                             <User className="h-3 w-3" />
                           )}
-                          {u.role}
+                          {u.role || 'sin rol'}
                         </span>
                       </td>
                       <td className="px-6 py-4">
                         <span
                           className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${u.status === 'activo'
                             ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-rose-100 text-rose-700'
+                            : u.status === 'sin_perfil'
+                              ? 'bg-amber-100 text-amber-700'
+                              : 'bg-rose-100 text-rose-700'
                             }`}
                         >
-                          {u.status}
+                          {u.status === 'sin_perfil' ? 'sin perfil' : u.status}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-xs text-slate-500 font-medium">
@@ -1630,7 +1633,7 @@ export function DrogueriasClient({
                     type="button"
                     size="sm"
                     variant="outline"
-                    disabled={savingResetPassword || newResetPassword.trim().length < 6}
+                    disabled={savingResetPassword || newResetPassword.trim().length < 8}
                     onClick={handleResetUserPassword}
                     className="shrink-0 h-9 text-xs font-bold border-indigo-200 text-indigo-700 hover:bg-indigo-50"
                   >

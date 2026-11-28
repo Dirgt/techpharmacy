@@ -43,6 +43,14 @@ import {
   validateAndNormalizePago,
   calcularEfectivoEsperadoCaja,
 } from '../src/lib/pos/pago-mixto.ts'
+import {
+  addDaysToDateOnly,
+  getBogotaDateString,
+  getBogotaDayRange,
+  getBogotaMonthRange,
+} from '../src/lib/date/bogota.ts'
+import { aplicarDescuento, calcularIvaLinea, normalizarTarifaIva } from '../src/lib/pos/montos.ts'
+import { fetchAllPages } from '../src/lib/supabase/fetch-all.ts'
 
 test('calculatePV calcula el precio de venta según margen sobre venta', () => {
   assert.equal(calculatePV(10000, 20), 12500)
@@ -193,7 +201,7 @@ test('DrogueriaSchema valida subdominio alfanumérico con guiones y URL opcional
   )
 })
 
-test('CreateTenantUserSchema exige email, contraseña >= 6, rol válido y drogueria_id UUID', () => {
+test('CreateTenantUserSchema exige email, contraseña >= 8, rol válido y drogueria_id UUID', () => {
   const validUuid = 'dc01561b-ed2d-46c3-b97a-1b5529464e8f'
   assert.equal(
     CreateTenantUserSchema.safeParse({
@@ -565,4 +573,77 @@ test('suggestPackConsolidation sugiere convertir unidades sueltas a blíster o c
     prices
   )
   assert.equal(sinCajaParaRespaldo, null)
+})
+
+
+test('rangos de fecha usan medianoche de Bogotá y fin exclusivo', () => {
+  assert.equal(getBogotaDateString(new Date('2026-11-28T02:00:00Z')), '2026-11-27')
+  assert.deepEqual(getBogotaDayRange('2026-11-27'), {
+    start: '2026-11-27T00:00:00-05:00',
+    endExclusive: '2026-11-28T00:00:00-05:00',
+  })
+  assert.equal(addDaysToDateOnly('2026-03-01', -1), '2026-02-28')
+  assert.deepEqual(getBogotaMonthRange('2026-12'), {
+    start: '2026-12-01T00:00:00-05:00',
+    endExclusive: '2027-01-01T00:00:00-05:00',
+  })
+})
+
+test('inventario acepta únicamente tarifas IVA colombianas configuradas', () => {
+  const base = {
+    codigo: 'IVA-TEST',
+    nombre: 'Producto prueba',
+    cajas: 1,
+    blisters: 0,
+    unidades: 0,
+    blisters_por_caja: 1,
+    unidades_por_blister: 1,
+    precio_caja: 1000,
+    precio_blister: 0,
+    precio_unidad: 0,
+    porcentaje_ganancia: 20,
+    margen_blister: 20,
+    margen_unidad: 20,
+    stock_minimo: 1,
+  }
+
+  assert.equal(UpsertInventarioSchema.safeParse({ ...base, iva_porcentaje: 0 }).success, true)
+  assert.equal(UpsertInventarioSchema.safeParse({ ...base, iva_porcentaje: 5 }).success, true)
+  assert.equal(UpsertInventarioSchema.safeParse({ ...base, iva_porcentaje: 19 }).success, true)
+  assert.equal(UpsertInventarioSchema.safeParse({ ...base, iva_porcentaje: 8 }).success, false)
+})
+
+test('montos del POS redondean igual que PostgreSQL en los casos x,5', () => {
+  // 3010 × 0,85 = 2558,5 → la base de datos redondea a 2559; con 1 - 0,15 en coma flotante daba 2558.
+  assert.equal(aplicarDescuento(3010, 15), 2559)
+  assert.equal(aplicarDescuento(12345, 10), 11111)
+  assert.equal(aplicarDescuento(10000, 0), 10000)
+  assert.equal(aplicarDescuento(10000, 100), 0)
+  assert.equal(aplicarDescuento(10000, 150), 0)
+  assert.equal(calcularIvaLinea(1050, 19), 200)
+  assert.equal(calcularIvaLinea(10, 5), 1)
+  assert.equal(calcularIvaLinea(9999, 0), 0)
+  assert.equal(normalizarTarifaIva('19'), 19)
+  assert.equal(normalizarTarifaIva(8), 0)
+})
+
+test('fetchAllPages recorre todas las páginas y respeta el tope', async () => {
+  const rows = Array.from({ length: 2345 }, (_, i) => i)
+  const fakePage = (from: number, to: number) =>
+    Promise.resolve({ data: rows.slice(from, to + 1), error: null })
+
+  const all = await fetchAllPages(fakePage)
+  assert.equal(all.data.length, 2345)
+  assert.equal(all.truncated, false)
+  assert.equal(all.data[2344], 2344)
+
+  const capped = await fetchAllPages(fakePage, { maxRows: 2000 })
+  assert.equal(capped.data.length, 2000)
+  assert.equal(capped.truncated, true)
+
+  const exact = await fetchAllPages((from, to) =>
+    Promise.resolve({ data: rows.slice(0, 1000).slice(from, to + 1), error: null })
+  )
+  assert.equal(exact.data.length, 1000)
+  assert.equal(exact.truncated, false)
 })

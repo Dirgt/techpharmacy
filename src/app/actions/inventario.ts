@@ -1,136 +1,85 @@
 'use server'
 
+import '@/lib/validations/zod-es'
+
+import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
-import { revalidatePath } from 'next/cache'
 import { UpsertInventarioSchema, UpsertInventarioInput } from '@/lib/validations/inventario.schema'
-import { requireAdmin } from '@/lib/auth/session'
+import { requireActiveUser, requireAdmin } from '@/lib/auth/session'
 import type { CsvInventarioRow } from '@/lib/inventario/csv-import'
-import { computeSellableStockFromLots } from '@/lib/inventario/fraccionamiento'
+import { fetchAllPages } from '@/lib/supabase/fetch-all'
+import { mensajeErrorBD } from '@/lib/errors'
 
-/**
- * Obtiene el inventario completo con datos de productos, laboratorios y lotes activos (FEFO)
- */
-export async function getInventario() {
-  const supabase = await createClient()
-  const [{ data, error }, { data: productosFormula }, { data: lotesData }] = await Promise.all([
-    supabase
-      .from('vista_inventario_completo')
-      .select('*')
-      .order('nombre_producto', { ascending: true }),
-    supabase.from('productos').select('id, requiere_formula'),
-    supabase
-      .from('inventario_lotes')
-      .select('id, inventario_id, producto_id, lote, fecha_vencimiento, cajas, blisters, unidades, costo_caja, created_at')
-      .order('fecha_vencimiento', { ascending: true }),
-  ])
-
-  if (error) {
-    console.error('Error fetching inventory:', JSON.stringify(error, null, 2))
-    return []
-  }
-
-  const formulaMap = new Map(
-    (productosFormula || []).map((p) => [p.id, Boolean(p.requiere_formula)])
-  )
-
-  const lotesByInv = new Map<string, NonNullable<typeof lotesData>>()
-  for (const lote of lotesData || []) {
-    const arr = lotesByInv.get(lote.inventario_id) || []
-    arr.push(lote)
-    lotesByInv.set(lote.inventario_id, arr)
-  }
-
-  return (data || []).map((item) => {
-    const itemLotes = item.inventario_id ? lotesByInv.get(item.inventario_id) || [] : []
-    const summary = computeSellableStockFromLots(itemLotes, {
-      lote: item.lote,
-      fecha_vencimiento: item.fecha_vencimiento,
-      cajas: item.cajas,
-      blisters: item.blisters,
-      unidades: item.unidades,
-      precio_caja: item.precio_caja,
-    })
-
-    return {
-      ...item,
-      requiere_formula: item.producto_id ? formulaMap.get(item.producto_id) ?? false : false,
-      lotes_activos: summary.lotes_ordenados,
-      tiene_stock_vencido: summary.tiene_stock_vencido,
-      todo_vencido: summary.todo_vencido,
-    }
-  })
-}
+// Las mutaciones de inventario no llaman revalidatePath: las pantallas leen el
+// catálogo local del navegador y lo sincronizan al terminar (ver src/lib/catalogo).
+// Revalidar re-renderizaba la página completa en cada edición.
 
 export async function darBajaLote(loteId: string, motivo: string) {
+  const auth = await requireAdmin()
+  if (!auth.ok) return { success: false, error: auth.error }
+
+  const parsed = z
+    .object({ loteId: z.string().uuid(), motivo: z.string().trim().max(300) })
+    .safeParse({ loteId, motivo: motivo || '' })
+  if (!parsed.success) return { success: false, error: 'Lote o motivo inválido.' }
+
   const supabase = await createClient()
-  try {
-    const auth = await requireAdmin()
-    if (!auth.ok) throw new Error(auth.error)
+  const { data, error } = await supabase.rpc('dar_baja_lote_tx', {
+    p_lote_id: parsed.data.loteId,
+    p_motivo: parsed.data.motivo || 'Baja por vencimiento o deterioro',
+  })
 
-    const { data, error } = await supabase.rpc('dar_baja_lote_tx', {
-      p_lote_id: loteId,
-      p_motivo: motivo.trim() || 'Baja por vencimiento o deterioro',
-    })
-
-    if (error) throw new Error(error.message)
-
-    revalidatePath('/inventario')
-    revalidatePath('/facturas')
-    revalidatePath('/dashboard')
-    revalidatePath('/reportes')
-    return { success: true, data }
-  } catch (error: unknown) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'No se pudo dar de baja el lote',
-    }
+  if (error) {
+    console.error('Error dando de baja el lote:', error)
+    return { success: false, error: mensajeErrorBD(error, 'No se pudo dar de baja el lote.') }
   }
-}
 
-export async function getProductos() {
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('productos')
-    .select('*')
-    .order('nombre', { ascending: true })
-
-  if (error) return { success: false, error: error.message }
   return { success: true, data }
 }
 
 /**
- * Obtiene el historial de auditoría de un producto
+ * Historial de un producto: auditoría de inventario más las ventas V2, que no
+ * escriben una fila de auditoría por producto (se reconstruyen desde el detalle).
  */
 export async function getAuditoria(inventarioId: string) {
+  const auth = await requireAdmin()
+  if (!auth.ok) return []
+  if (!z.string().uuid().safeParse(inventarioId).success) return []
+
   const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('auditoria_inventario')
-    .select('*')
-    .eq('inventario_id', inventarioId)
-    .order('created_at', { ascending: false })
-    
+  const { data, error } = await supabase.rpc('bitacora_inventario', {
+    p_inventario_id: inventarioId,
+    p_limite: 500,
+  })
+
   if (error) {
-    console.error('Error fetching audit logs:', error)
+    console.error('Error consultando auditoría:', error)
     return []
   }
-  return data
+  return data || []
 }
 
 /**
  * Obtiene la lista de laboratorios para el formulario
  */
 export async function getLaboratorios() {
+  const auth = await requireActiveUser()
+  if (!auth.ok) return []
+
   const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('laboratorios')
-    .select('*')
-    .order('nombre', { ascending: true })
+  const { data, error } = await fetchAllPages((from, to) =>
+    supabase
+      .from('laboratorios')
+      .select('*')
+      .order('nombre', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, to)
+  )
 
   if (error) {
-    console.error('Error fetching labs:', error)
+    console.error('Error consultando laboratorios:', error)
     return []
   }
-
   return data
 }
 
@@ -138,98 +87,114 @@ export async function getLaboratorios() {
  * Busca un producto por su código de barras
  */
 export async function buscarProductoPorCodigo(codigo: string) {
+  const auth = await requireActiveUser()
+  if (!auth.ok) return null
+
+  const clean = codigo.trim()
+  if (!clean || clean.length > 80) return null
+
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('vista_inventario_completo')
     .select('*')
-    .eq('codigo', codigo)
-    .single()
+    .eq('codigo', clean)
+    .maybeSingle()
 
   if (error) return null
   return data
 }
 
 /**
- * Crea un nuevo laboratorio
+ * Crea un nuevo laboratorio (o devuelve el existente con el mismo nombre en la sede)
  */
 export async function createLaboratorio(nombre: string) {
-  const supabase = await createClient()
-  const cleanNombre = nombre.trim().toUpperCase()
+  const auth = await requireAdmin()
+  if (!auth.ok) return { success: false, error: auth.error }
+  if (!auth.profile.drogueria_id) return { success: false, error: 'No hay una droguería activa.' }
 
-  // Optimización Extrema: Usamos UPSERT con ON CONFLICT.
-  // Esto delega la verificación y creación a PostgreSQL en UNA SOLA operación.
-  // No hay riesgo de consumo excesivo en capas gratuitas porque es 1 solo request.
+  const cleanNombre = nombre.trim().toUpperCase()
+  if (!cleanNombre || cleanNombre.length > 120) {
+    return { success: false, error: 'El nombre del laboratorio no es válido.' }
+  }
+
+  const supabase = await createClient()
+  // Una sola operación: crea el laboratorio o reutiliza el existente de la misma sede.
   const { data, error } = await supabase
     .from('laboratorios')
-    .upsert({ nombre: cleanNombre }, { onConflict: 'nombre' })
+    .upsert(
+      { nombre: cleanNombre, drogueria_id: auth.profile.drogueria_id },
+      { onConflict: 'drogueria_id,nombre' }
+    )
     .select()
     .single()
 
   if (error) {
-    return { success: false, error: error.message }
+    console.error('Error creando laboratorio:', error)
+    return { success: false, error: mensajeErrorBD(error, 'No se pudo crear el laboratorio.') }
   }
   return { success: true, data }
 }
 
+type InventarioParaRpc = ReturnType<typeof UpsertInventarioSchema.parse>
+
+function rpcArgsInventario(d: InventarioParaRpc, ids: { inventarioId?: string; productoId?: string }) {
+  return {
+    p_blisters: d.blisters,
+    p_blisters_por_caja: d.blisters_por_caja,
+    p_cajas: d.cajas,
+    p_codigo: d.codigo,
+    p_fecha_vencimiento: d.fecha_vencimiento || undefined,
+    p_inventario_id: ids.inventarioId || undefined,
+    p_laboratorio_id: d.laboratorio_id || undefined,
+    p_lote: d.lote || '',
+    p_margen_blister: d.margen_blister,
+    p_margen_unidad: d.margen_unidad,
+    p_nombre: d.nombre,
+    p_porcentaje_ganancia: d.porcentaje_ganancia,
+    p_precio_blister: d.precio_blister,
+    p_precio_caja: d.precio_caja,
+    p_precio_unidad: d.precio_unidad,
+    p_principio_activo: d.principio_activo || '',
+    p_producto_id: ids.productoId || undefined,
+    p_registro_invima: d.registro_invima || '',
+    p_seccion: d.seccion || '',
+    p_stock_minimo: d.stock_minimo,
+    p_ubicacion: d.ubicacion || '',
+    p_unidades: d.unidades,
+    p_unidades_por_blister: d.unidades_por_blister,
+    // En la misma transacción: antes se guardaban con un UPDATE aparte que podía fallar.
+    p_iva_porcentaje: d.iva_porcentaje,
+    p_requiere_formula: Boolean(d.requiere_formula),
+  }
+}
+
 /**
- * Procesa la carga o actualización de inventario con Auditoría Forense usando una Transacción (RPC)
+ * Procesa la carga o actualización de inventario con auditoría usando una transacción (RPC)
  */
 export async function upsertInventario(rawData: UpsertInventarioInput) {
-  const supabase = await createClient()
+  const auth = await requireAdmin()
+  if (!auth.ok) return { success: false, error: auth.error }
 
-  // 1. Validar los datos de entrada con Zod
   const validation = UpsertInventarioSchema.safeParse(rawData)
   if (!validation.success) {
-    return { success: false, error: 'Datos inválidos: ' + validation.error.issues.map((e) => e.message).join(', ') }
+    return {
+      success: false,
+      error: 'Datos inválidos: ' + validation.error.issues.map((e) => e.message).join(', '),
+    }
   }
-
   const data = validation.data
 
-  // 2. Ejecutar la Transacción vía RPC
-  const { data: upserted, error } = await supabase.rpc('upsert_inventario_tx', {
-    p_blisters: data.blisters,
-    p_blisters_por_caja: data.blisters_por_caja,
-    p_cajas: data.cajas,
-    p_codigo: data.codigo,
-    p_fecha_vencimiento: data.fecha_vencimiento || undefined,
-    p_inventario_id: data.id || undefined,
-    p_laboratorio_id: data.laboratorio_id || undefined,
-    p_lote: data.lote || '',
-    p_margen_blister: data.margen_blister,
-    p_margen_unidad: data.margen_unidad,
-    p_nombre: data.nombre,
-    p_porcentaje_ganancia: data.porcentaje_ganancia,
-    p_precio_blister: data.precio_blister,
-    p_precio_caja: data.precio_caja,
-    p_precio_unidad: data.precio_unidad,
-    p_principio_activo: data.principio_activo || '',
-    p_producto_id: data.producto_id || undefined,
-    p_registro_invima: data.registro_invima || '',
-    p_seccion: data.seccion || '',
-    p_stock_minimo: data.stock_minimo,
-    p_ubicacion: data.ubicacion || '',
-    p_unidades: data.unidades,
-    p_unidades_por_blister: data.unidades_por_blister
-  })
+  const supabase = await createClient()
+  const { data: upserted, error } = await supabase.rpc(
+    'upsert_inventario_v2_tx',
+    rpcArgsInventario(data, { inventarioId: data.id, productoId: data.producto_id })
+  )
 
   if (error) {
-    console.error('Upsert Error (RPC):', JSON.stringify(error, null, 2))
-    return { success: false, error: error.message }
+    console.error('Error guardando inventario:', error)
+    return { success: false, error: mensajeErrorBD(error, 'No se pudo guardar el inventario.') }
   }
 
-  const upsertedObj =
-    typeof upserted === 'object' && upserted !== null ? (upserted as { producto_id?: string }) : null
-  const finalProdId = data.producto_id || upsertedObj?.producto_id
-  if (finalProdId) {
-    await supabase
-      .from('productos')
-      .update({ requiere_formula: Boolean(data.requiere_formula) })
-      .eq('id', finalProdId)
-  }
-
-  // Refrescar toda la aplicación para que el módulo de Facturación (POS) tenga el stock más reciente
-  revalidatePath('/', 'layout')
-  
   return { success: true, data: upserted }
 }
 
@@ -263,20 +228,26 @@ export async function importarInventarioMasivo(rows: CsvInventarioRow[]): Promis
   }
 
   const supabase = await createClient()
-  const { data: existingLabs } = await supabase.from('laboratorios').select('id, nombre')
+  const { data: existingLabs } = await fetchAllPages((from, to) =>
+    supabase
+      .from('laboratorios')
+      .select('id, nombre')
+      .order('id', { ascending: true })
+      .range(from, to)
+  )
   const labMap = new Map<string, string>(
-    (existingLabs || []).map((l) => [l.nombre.trim().toUpperCase(), l.id])
+    existingLabs.map((l) => [l.nombre.trim().toUpperCase(), l.id])
   )
 
   let importados = 0
   let fallidos = 0
   const errores: string[] = []
 
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i]
+  for (const row of rows) {
+    const etiqueta = String(row?.codigo || row?.nombre || 'Fila sin código')
     let laboratorioId: string | undefined
 
-    if (row.laboratorio) {
+    if (typeof row?.laboratorio === 'string' && row.laboratorio.trim()) {
       const labKey = row.laboratorio.trim().toUpperCase()
       laboratorioId = labMap.get(labKey)
       if (!laboratorioId) {
@@ -288,98 +259,60 @@ export async function importarInventarioMasivo(rows: CsvInventarioRow[]): Promis
       }
     }
 
-    const bpc = Math.max(1, row.blisters_por_caja || 1)
-    const upb = Math.max(1, row.unidades_por_blister || 1)
+    const bpc = Math.max(1, Number(row?.blisters_por_caja) || 1)
+    const upb = Math.max(1, Number(row?.unidades_por_blister) || 1)
+    const precioCaja = Number(row?.precio_caja) || 0
     const precioBlister =
-      row.precio_blister > 0 ? row.precio_blister : Number((row.precio_caja / bpc).toFixed(2))
+      Number(row?.precio_blister) > 0 ? Number(row.precio_blister) : Number((precioCaja / bpc).toFixed(2))
     const precioUnidad =
-      row.precio_unidad > 0 ? row.precio_unidad : Number((precioBlister / upb).toFixed(2))
+      Number(row?.precio_unidad) > 0 ? Number(row.precio_unidad) : Number((precioBlister / upb).toFixed(2))
 
     const validation = UpsertInventarioSchema.safeParse({
-      codigo: row.codigo,
-      nombre: row.nombre,
-      principio_activo: row.principio_activo || '',
+      codigo: row?.codigo,
+      nombre: row?.nombre,
+      principio_activo: row?.principio_activo || '',
       laboratorio_id: laboratorioId || '',
-      cajas: row.cajas,
-      blisters: row.blisters,
-      unidades: row.unidades,
+      cajas: row?.cajas,
+      blisters: row?.blisters,
+      unidades: row?.unidades,
       blisters_por_caja: bpc,
       unidades_por_blister: upb,
-      precio_caja: row.precio_caja,
+      precio_caja: precioCaja,
       precio_blister: precioBlister,
       precio_unidad: precioUnidad,
-      porcentaje_ganancia: row.porcentaje_ganancia,
-      margen_blister: row.margen_blister,
-      margen_unidad: row.margen_unidad,
-      lote: row.lote || '',
-      fecha_vencimiento: row.fecha_vencimiento || null,
-      registro_invima: row.registro_invima || '',
-      seccion: row.seccion || '',
-      ubicacion: row.ubicacion || '',
-      stock_minimo: row.stock_minimo,
+      porcentaje_ganancia: row?.porcentaje_ganancia,
+      margen_blister: row?.margen_blister,
+      margen_unidad: row?.margen_unidad,
+      lote: row?.lote || '',
+      fecha_vencimiento: row?.fecha_vencimiento || null,
+      registro_invima: row?.registro_invima || '',
+      seccion: row?.seccion || '',
+      ubicacion: row?.ubicacion || '',
+      stock_minimo: row?.stock_minimo,
+      iva_porcentaje: row?.iva_porcentaje ?? 0,
+      requiere_formula: Boolean(row?.requiere_formula),
     })
 
     if (!validation.success) {
       fallidos++
       if (errores.length < 20) {
-        errores.push(
-          `${row.codigo || row.nombre}: ${validation.error.issues.map((e) => e.message).join(', ')}`
-        )
+        errores.push(`${etiqueta}: ${validation.error.issues.map((e) => e.message).join(', ')}`)
       }
       continue
     }
 
     const d = validation.data
-    const { data: upsertedRow, error } = await supabase.rpc('upsert_inventario_tx', {
-      p_blisters: d.blisters,
-      p_blisters_por_caja: d.blisters_por_caja,
-      p_cajas: d.cajas,
-      p_codigo: d.codigo,
-      p_fecha_vencimiento: d.fecha_vencimiento || undefined,
-      p_inventario_id: undefined,
-      p_laboratorio_id: d.laboratorio_id || undefined,
-      p_lote: d.lote || '',
-      p_margen_blister: d.margen_blister,
-      p_margen_unidad: d.margen_unidad,
-      p_nombre: d.nombre,
-      p_porcentaje_ganancia: d.porcentaje_ganancia,
-      p_precio_blister: d.precio_blister,
-      p_precio_caja: d.precio_caja,
-      p_precio_unidad: d.precio_unidad,
-      p_principio_activo: d.principio_activo || '',
-      p_producto_id: undefined,
-      p_registro_invima: d.registro_invima || '',
-      p_seccion: d.seccion || '',
-      p_stock_minimo: d.stock_minimo,
-      p_ubicacion: d.ubicacion || '',
-      p_unidades: d.unidades,
-      p_unidades_por_blister: d.unidades_por_blister,
-    })
+    const { error } = await supabase.rpc('upsert_inventario_v2_tx', rpcArgsInventario(d, {}))
 
     if (error) {
       fallidos++
       if (errores.length < 20) {
-        errores.push(`${row.codigo}: ${error.message}`)
+        errores.push(`${etiqueta}: ${mensajeErrorBD(error, 'no se pudo guardar.')}`)
       }
-    } else {
-      const upsertedObj =
-        typeof upsertedRow === 'object' && upsertedRow !== null
-          ? (upsertedRow as { producto_id?: string })
-          : null
-      if (upsertedObj?.producto_id) {
-        await supabase
-          .from('productos')
-          .update({ requiere_formula: Boolean(row.requiere_formula) })
-          .eq('id', upsertedObj.producto_id)
-      }
-      importados++
+      continue
     }
+    importados++
   }
-
-  revalidatePath('/', 'layout')
-  revalidatePath('/inventario')
-  revalidatePath('/facturas')
-  revalidatePath('/dashboard')
 
   return { success: importados > 0, importados, fallidos, errores }
 }

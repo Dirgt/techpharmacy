@@ -95,6 +95,12 @@ export interface DashboardSnapshot {
     porVencer: DashboardAlertItem[]
     stockBajo: DashboardAlertItem[]
   }
+  conteoAlertas?: {
+    vencidos: number
+    porVencer: number
+    stockBajo: number
+    productosConVencidos: number
+  }
   topProductos: DashboardTopProduct[]
   facturasRecientes: DashboardRecentInvoice[]
 }
@@ -465,8 +471,14 @@ export function DashboardClient({
     return merged.filter((a) => a.tipo === alertTab)
   }, [active.alertas, alertTab])
 
-  const totalSanitaryIssues =
-    active.alertas.vencidos.length + active.alertas.porVencer.length
+  // Conteos reales (las listas solo traen los primeros elementos para pintar).
+  const conteoVencidos = active.conteoAlertas?.vencidos ?? active.alertas.vencidos.length
+  const conteoPorVencer = active.conteoAlertas?.porVencer ?? active.alertas.porVencer.length
+  const conteoStockBajo = active.conteoAlertas?.stockBajo ?? active.alertas.stockBajo.length
+  const productosConVencidos =
+    active.conteoAlertas?.productosConVencidos ?? active.alertas.vencidos.length
+
+  const totalSanitaryIssues = conteoVencidos + conteoPorVencer
   const healthPct =
     active.totalProductos > 0
       ? Math.max(
@@ -474,9 +486,7 @@ export function DashboardClient({
           Math.min(
             100,
             Math.round(
-              ((active.totalProductos - active.alertas.vencidos.length) /
-                active.totalProductos) *
-                100
+              ((active.totalProductos - productosConVencidos) / active.totalProductos) * 100
             )
           )
         )
@@ -543,7 +553,7 @@ export function DashboardClient({
 
             {/* Estado de Caja e indicadores rápidos en vivo */}
             <div className="flex flex-wrap items-center gap-2.5 pt-1">
-              <Link
+              <Link prefetch={false}
                 href="/facturas"
                 className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-1.5 text-xs font-black transition-colors ${
                   effectiveCaja.abierta
@@ -584,7 +594,7 @@ export function DashboardClient({
               </button>
             )}
 
-            <Link
+            <Link prefetch={false}
               href="/inventario"
               className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs sm:text-sm font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20"
             >
@@ -593,7 +603,7 @@ export function DashboardClient({
             </Link>
 
             {isAdminOrSuper && (
-              <Link
+              <Link prefetch={false}
                 href="/compras"
                 className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs sm:text-sm font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20"
               >
@@ -602,7 +612,7 @@ export function DashboardClient({
               </Link>
             )}
 
-            <Link
+            <Link prefetch={false}
               href="/facturas"
               className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 px-5 py-2.5 text-xs sm:text-sm font-black text-slate-950 shadow-lg shadow-emerald-500/30 transition-all hover:from-emerald-300 hover:to-teal-300 hover:scale-[1.02]"
             >
@@ -693,7 +703,7 @@ export function DashboardClient({
                 {formatCurrency(flujoNetoPeriodo)}
               </strong>
             </span>
-            <Link
+            <Link prefetch={false}
               href={isAdminOrSuper ? '/reportes' : '/facturas'}
               className="inline-flex items-center gap-1 font-black text-indigo-600 hover:text-indigo-700"
             >
@@ -771,14 +781,14 @@ export function DashboardClient({
             </div>
             <div
               className={`rounded-2xl p-3 border ${
-                active.alertas.vencidos.length > 0
+                conteoVencidos > 0
                   ? 'bg-rose-50 text-rose-600 border-rose-100'
                   : totalSanitaryIssues > 0
                     ? 'bg-amber-50 text-amber-600 border-amber-100'
                     : 'bg-emerald-50 text-emerald-600 border-emerald-100'
               }`}
             >
-              {active.alertas.vencidos.length > 0 ? (
+              {conteoVencidos > 0 ? (
                 <ShieldAlert className="h-5 w-5" />
               ) : (
                 <ShieldCheck className="h-5 w-5" />
@@ -789,40 +799,40 @@ export function DashboardClient({
           <div className="mt-3 flex flex-wrap gap-1.5 text-[11px] font-black">
             <span
               className={`rounded-md px-2 py-0.5 border ${
-                active.alertas.vencidos.length > 0
+                conteoVencidos > 0
                   ? 'bg-rose-50 text-rose-700 border-rose-200'
                   : 'bg-slate-50 text-slate-500 border-slate-200'
               }`}
             >
-              {active.alertas.vencidos.length} Vencidos
+              {conteoVencidos} Vencidos
             </span>
             <span
               className={`rounded-md px-2 py-0.5 border ${
-                active.alertas.porVencer.length > 0
+                conteoPorVencer > 0
                   ? 'bg-amber-50 text-amber-700 border-amber-200'
                   : 'bg-slate-50 text-slate-500 border-slate-200'
               }`}
             >
-              {active.alertas.porVencer.length} Próx. 90d
+              {conteoPorVencer} Próx. 90d
             </span>
             <span
               className={`rounded-md px-2 py-0.5 border ${
-                active.alertas.stockBajo.length > 0
+                conteoStockBajo > 0
                   ? 'bg-sky-50 text-sky-700 border-sky-200'
                   : 'bg-slate-50 text-slate-500 border-slate-200'
               }`}
             >
-              {active.alertas.stockBajo.length} Stock bajo
+              {conteoStockBajo} Stock bajo
             </span>
           </div>
 
           <div className="mt-3.5 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
             <span className="font-semibold text-slate-500">
-              {active.alertas.vencidos.length > 0
+              {conteoVencidos > 0
                 ? 'Bloqueados automáticamente en POS'
                 : 'Cero lotes vencidos en mostrador'}
             </span>
-            <Link
+            <Link prefetch={false}
               href="/inventario"
               className="font-black text-emerald-700 hover:underline shrink-0"
             >
@@ -998,7 +1008,7 @@ export function DashboardClient({
                 Los pagos Nequi + Efectivo separan automáticamente cada peso del cajón.
               </p>
             </div>
-            <Link
+            <Link prefetch={false}
               href="/facturas"
               className="shrink-0 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white shadow-sm hover:bg-emerald-700 transition-colors"
             >
@@ -1022,7 +1032,7 @@ export function DashboardClient({
                 Lotes vencidos, próximos a vencer y agotados
               </p>
             </div>
-            <Link
+            <Link prefetch={false}
               href="/inventario"
               className="text-xs font-black text-emerald-700 hover:underline shrink-0"
             >
@@ -1036,19 +1046,19 @@ export function DashboardClient({
               {
                 id: 'todos' as const,
                 label: `Todos (${
-                  active.alertas.vencidos.length +
-                  active.alertas.porVencer.length +
-                  active.alertas.stockBajo.length
+                  conteoVencidos +
+                  conteoPorVencer +
+                  conteoStockBajo
                 })`,
               },
-              { id: 'vencido' as const, label: `Vencidos (${active.alertas.vencidos.length})` },
+              { id: 'vencido' as const, label: `Vencidos (${conteoVencidos})` },
               {
                 id: 'por_vencer' as const,
-                label: `Por vencer (${active.alertas.porVencer.length})`,
+                label: `Por vencer (${conteoPorVencer})`,
               },
               {
                 id: 'stock_bajo' as const,
-                label: `Stock bajo (${active.alertas.stockBajo.length})`,
+                label: `Stock bajo (${conteoStockBajo})`,
               },
             ].map((tab) => (
               <button
@@ -1147,7 +1157,7 @@ export function DashboardClient({
               </p>
             </div>
             {isAdminOrSuper && (
-              <Link
+              <Link prefetch={false}
                 href="/reportes"
                 className="text-xs font-black text-emerald-700 hover:underline shrink-0"
               >
@@ -1230,7 +1240,7 @@ export function DashboardClient({
                 Recibos recientes con acceso directo a tirilla
               </p>
             </div>
-            <Link
+            <Link prefetch={false}
               href="/facturas"
               className="text-xs font-black text-indigo-600 hover:underline shrink-0"
             >
@@ -1276,7 +1286,7 @@ export function DashboardClient({
                         </p>
                       </div>
                       {!isDemoActive && (
-                        <Link
+                        <Link prefetch={false}
                           href={`/facturas/${fac.id}/print`}
                           title="Imprimir o enviar tirilla por WhatsApp"
                           className="rounded-xl border border-slate-200 bg-slate-50 p-2 text-slate-600 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 transition-colors"
@@ -1297,7 +1307,7 @@ export function DashboardClient({
                 <p className="text-xs text-slate-400 mt-0.5 max-w-[230px]">
                   Abre el mostrador POS para registrar tu primera venta rápida.
                 </p>
-                <Link
+                <Link prefetch={false}
                   href="/facturas"
                   className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-black text-white hover:bg-emerald-700"
                 >

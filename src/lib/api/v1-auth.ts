@@ -1,8 +1,8 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { NextRequest, NextResponse } from 'next/server'
+import { after, NextRequest, NextResponse } from 'next/server'
 import type { Database } from '@/lib/supabase/database.types'
 import { isTenantSuspended } from '@/lib/tenant/domain'
-import { ApiScope, checkRateLimit, hashApiKey } from './api-key-utils'
+import { ApiScope, hashApiKey } from './api-key-utils'
 
 export interface RateLimitInfo {
   limit: number
@@ -168,8 +168,26 @@ export async function authenticateApiKey(
     }
   }
 
-  const rateLimit = checkRateLimit(keyRow.id, 120)
-  if (!rateLimit.allowed) {
+  const { data: rateLimitData, error: rateLimitError } = await adminClient.rpc(
+    'consume_api_rate_limit',
+    { p_api_key_id: keyRow.id, p_limit: 120 }
+  )
+  if (rateLimitError) {
+    console.error('No se pudo consultar el rate limit de la API:', rateLimitError)
+    return {
+      ok: false,
+      response: apiJson({ success: false, error: 'No se pudo validar la cuota de la API.' }, 503),
+    }
+  }
+  const rawRateLimit = (rateLimitData && typeof rateLimitData === 'object'
+    ? rateLimitData
+    : {}) as { allowed?: boolean; limit?: number; remaining?: number; reset_at?: number }
+  const rateLimit: RateLimitInfo = {
+    limit: Number(rawRateLimit.limit || 120),
+    remaining: Math.max(0, Number(rawRateLimit.remaining || 0)),
+    resetAt: Number(rawRateLimit.reset_at || Date.now() + 60_000),
+  }
+  if (rawRateLimit.allowed === false) {
     return {
       ok: false,
       response: apiJson(
@@ -187,10 +205,13 @@ export async function authenticateApiKey(
   const lastTouch = lastUsedTouchMap.get(keyRow.id) ?? 0
   if (now - lastTouch > 60_000) {
     lastUsedTouchMap.set(keyRow.id, now)
-    void adminClient
-      .from('api_keys')
-      .update({ last_used_at: new Date(now).toISOString() })
-      .eq('id', keyRow.id)
+    after(async () => {
+      const { error: touchError } = await adminClient
+        .from('api_keys')
+        .update({ last_used_at: new Date(now).toISOString() })
+        .eq('id', keyRow.id)
+      if (touchError) console.error('No se pudo actualizar last_used_at:', touchError)
+    })
   }
 
   return {

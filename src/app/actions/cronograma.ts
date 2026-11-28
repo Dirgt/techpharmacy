@@ -1,152 +1,232 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import '@/lib/validations/zod-es'
+
 import { revalidatePath } from 'next/cache'
+import { z } from 'zod'
+import { createClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/auth/session'
 
-/**
- * Valida si un usuario ya tiene un turno en una fecha específica
- */
-async function checkTurnoConflict(usuario_id: string, fecha: string, excludeId?: string) {
+const UuidSchema = z.string().uuid()
+const DateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+// Debe coincidir con la restricción cronogramas_turno_check de la base de datos.
+const TurnoSchema = z.enum(['Apertura', 'Cierre', 'Turno Largo'])
+
+function toDateOnly(year: number, monthIndex: number, day: number) {
+  return `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+async function validateTenantUser(userId: string, tenantId: string) {
   const supabase = await createClient()
-  let query = supabase
-    .from('cronogramas')
-    .select('id, turno')
-    .eq('usuario_id', usuario_id)
-    .eq('fecha', fecha)
+  const { data } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('id', userId)
+    .eq('drogueria_id', tenantId)
+    .eq('status', 'activo')
+    .maybeSingle()
+  return Boolean(data)
+}
 
-  if (excludeId) {
-    query = query.neq('id', excludeId)
-  }
-
-  const { data } = await query
-  return data && data.length > 0
+async function logTurno(
+  actorId: string,
+  tenantId: string,
+  accion: string,
+  detalles: string,
+  entidadId?: string
+) {
+  const supabase = await createClient()
+  const { error } = await supabase.from('logs_actividad').insert({
+    drogueria_id: tenantId,
+    usuario_id: actorId,
+    accion,
+    detalles,
+    tipo_entidad: 'CRONOGRAMA',
+    entidad_id: entidadId,
+  })
+  if (error) console.error('No se pudo registrar el cambio de turno:', error)
 }
 
 export async function createTurno(formData: FormData) {
-  const supabase = await createClient()
-  
-  const usuario_id = formData.get('usuario_id') as string
-  const fecha = formData.get('fecha') as string
-  const turno = formData.get('turno') as string
+  const auth = await requireAdmin()
+  if (!auth.ok) return { error: auth.error }
+  const tenantId = auth.profile.drogueria_id
+  if (!tenantId) return { error: 'No hay una droguería activa.' }
 
-  // 1. Validar conflicto
-  const hasConflict = await checkTurnoConflict(usuario_id, fecha)
-  if (hasConflict) {
-    return { error: 'Este empleado ya tiene un turno asignado para esta fecha.' }
+  const parsed = z
+    .object({ usuario_id: UuidSchema, fecha: DateSchema, turno: TurnoSchema })
+    .safeParse({
+      usuario_id: formData.get('usuario_id'),
+      fecha: formData.get('fecha'),
+      turno: formData.get('turno'),
+    })
+  if (!parsed.success) return { error: 'Los datos del turno no son válidos.' }
+  if (!(await validateTenantUser(parsed.data.usuario_id, tenantId))) {
+    return { error: 'El empleado no pertenece a esta droguería o está inactivo.' }
   }
 
-  const { data: { user } } = await supabase.auth.getUser()
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('cronogramas')
+    .insert({ ...parsed.data, drogueria_id: tenantId })
+    .select('id')
+    .single()
 
-  const { error } = await supabase.from('cronogramas').insert({
-    usuario_id,
-    fecha,
-    turno
-  })
+  if (error) {
+    if (error.code === '23505') return { error: 'Este empleado ya tiene un turno asignado para esta fecha.' }
+    console.error('No se pudo crear el turno:', error)
+    return { error: 'No se pudo crear el turno.' }
+  }
 
-  if (error) return { error: error.message }
-
-  // Registro en logs
-  await supabase.from('logs_actividad').insert({
-    usuario_id: user?.id,
-    accion: 'CREAR_TURNO',
-    detalles: `Turno ${turno} creado para el ${fecha}`
-  })
-
+  await logTurno(
+    auth.user.id,
+    tenantId,
+    'CREAR_TURNO',
+    `Turno ${parsed.data.turno} creado para el ${parsed.data.fecha}`,
+    data.id
+  )
   revalidatePath('/cronograma')
   return { success: true }
 }
 
 export async function updateTurno(id: string, formData: FormData) {
-  const supabase = await createClient()
-  
-  const fecha = formData.get('fecha') as string
-  const turno = formData.get('turno') as string
-  const usuario_id = formData.get('usuario_id') as string
+  const auth = await requireAdmin()
+  if (!auth.ok) return { error: auth.error }
+  const tenantId = auth.profile.drogueria_id
+  if (!tenantId) return { error: 'No hay una droguería activa.' }
 
-  // 1. Validar conflicto (excluyendo el turno actual)
-  const hasConflict = await checkTurnoConflict(usuario_id, fecha, id)
-  if (hasConflict) {
-    return { error: 'Conflicto detectado: El empleado ya tiene otra asignación ese día.' }
+  const parsed = z
+    .object({ id: UuidSchema, usuario_id: UuidSchema, fecha: DateSchema, turno: TurnoSchema })
+    .safeParse({
+      id,
+      usuario_id: formData.get('usuario_id'),
+      fecha: formData.get('fecha'),
+      turno: formData.get('turno'),
+    })
+  if (!parsed.success) return { error: 'Los datos del turno no son válidos.' }
+  if (!(await validateTenantUser(parsed.data.usuario_id, tenantId))) {
+    return { error: 'El empleado no pertenece a esta droguería o está inactivo.' }
   }
 
-  const { data: { user } } = await supabase.auth.getUser()
-
-  const { error } = await supabase
+  const supabase = await createClient()
+  const { data, error } = await supabase
     .from('cronogramas')
-    .update({ fecha, turno, usuario_id })
-    .eq('id', id)
+    .update({
+      fecha: parsed.data.fecha,
+      turno: parsed.data.turno,
+      usuario_id: parsed.data.usuario_id,
+    })
+    .eq('id', parsed.data.id)
+    .eq('drogueria_id', tenantId)
+    .select('id')
+    .maybeSingle()
 
-  if (error) return { error: error.message }
+  if (error) {
+    if (error.code === '23505') return { error: 'El empleado ya tiene otra asignación ese día.' }
+    console.error('No se pudo actualizar el turno:', error)
+    return { error: 'No se pudo actualizar el turno.' }
+  }
+  if (!data) return { error: 'Turno no encontrado en esta droguería.' }
 
-  await supabase.from('logs_actividad').insert({
-    usuario_id: user?.id,
-    accion: 'ACTUALIZAR_TURNO',
-    detalles: `Turno ID ${id} actualizado a ${turno} en ${fecha}`
-  })
-
+  await logTurno(
+    auth.user.id,
+    tenantId,
+    'ACTUALIZAR_TURNO',
+    `Turno ${parsed.data.id} actualizado a ${parsed.data.turno} en ${parsed.data.fecha}`,
+    parsed.data.id
+  )
   revalidatePath('/cronograma')
   return { success: true }
 }
 
 export async function deleteTurno(id: string) {
+  const auth = await requireAdmin()
+  if (!auth.ok) return { error: auth.error }
+  const tenantId = auth.profile.drogueria_id
+  const parsedId = UuidSchema.safeParse(id)
+  if (!tenantId || !parsedId.success) return { error: 'Turno inválido.' }
+
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data, error } = await supabase
+    .from('cronogramas')
+    .delete()
+    .eq('id', parsedId.data)
+    .eq('drogueria_id', tenantId)
+    .select('id')
+    .maybeSingle()
 
-  const { error } = await supabase.from('cronogramas').delete().eq('id', id)
-  if (error) return { error: error.message }
+  if (error) {
+    console.error('No se pudo eliminar el turno:', error)
+    return { error: 'No se pudo eliminar el turno.' }
+  }
+  if (!data) return { error: 'Turno no encontrado en esta droguería.' }
 
-  await supabase.from('logs_actividad').insert({
-    usuario_id: user?.id,
-    accion: 'ELIMINAR_TURNO',
-    detalles: `Turno ID ${id} eliminado`
-  })
-
+  await logTurno(
+    auth.user.id,
+    tenantId,
+    'ELIMINAR_TURNO',
+    `Turno ${parsedId.data} eliminado`,
+    parsedId.data
+  )
   revalidatePath('/cronograma')
   return { success: true }
 }
 
-/**
- * Clona todos los turnos del mes anterior al mes actual
- */
 export async function clonePreviousMonth(targetDate: string) {
-  const supabase = await createClient()
-  
-  const target = new Date(targetDate)
-  const prevMonth = new Date(target.getFullYear(), target.getMonth() - 1, 1)
-  
-  const startPrev = new Date(prevMonth.getFullYear(), prevMonth.getMonth(), 1).toISOString().split('T')[0]
-  const endPrev = new Date(prevMonth.getFullYear(), prevMonth.getMonth() + 1, 0).toISOString().split('T')[0]
+  const auth = await requireAdmin()
+  if (!auth.ok) return { error: auth.error }
+  const tenantId = auth.profile.drogueria_id
+  const dateResult = DateSchema.safeParse(targetDate)
+  if (!tenantId || !dateResult.success) return { error: 'El mes de destino no es válido.' }
 
-  // 1. Obtener turnos del mes anterior
+  const [year, month, day] = dateResult.data.split('-').map(Number)
+  const target = new Date(year, month - 1, day)
+  const previous = new Date(year, month - 2, 1)
+  const startPrev = toDateOnly(previous.getFullYear(), previous.getMonth(), 1)
+  const lastPrevDay = new Date(previous.getFullYear(), previous.getMonth() + 1, 0).getDate()
+  const endPrev = toDateOnly(previous.getFullYear(), previous.getMonth(), lastPrevDay)
+
+  const supabase = await createClient()
   const { data: oldTurnos, error: fetchError } = await supabase
     .from('cronogramas')
     .select('usuario_id, turno, fecha')
+    .eq('drogueria_id', tenantId)
     .gte('fecha', startPrev)
     .lte('fecha', endPrev)
 
-  if (fetchError) return { error: fetchError.message }
-  if (!oldTurnos || oldTurnos.length === 0) return { error: 'No se encontraron turnos en el mes anterior para clonar.' }
+  if (fetchError) {
+    console.error('No se pudieron consultar los turnos anteriores:', fetchError)
+    return { error: 'No se pudieron consultar los turnos del mes anterior.' }
+  }
+  if (!oldTurnos?.length) return { error: 'No se encontraron turnos en el mes anterior para clonar.' }
 
-  // 2. Preparar nuevos turnos ajustando la fecha al mes actual
-  const newTurnos = oldTurnos.flatMap(t => {
-    const oldDate = new Date(t.fecha + 'T00:00:00')
-    const newDate = new Date(target.getFullYear(), target.getMonth(), oldDate.getDate())
-    
-    // Validar que el día exista en el mes actual (ej: 31 de marzo -> abril tiene 30)
-    if (newDate.getMonth() !== target.getMonth()) return []
-
-    return [{
-      usuario_id: t.usuario_id,
-      turno: t.turno,
-      fecha: newDate.toISOString().split('T')[0]
-    }]
+  const newTurnos = oldTurnos.flatMap((turno) => {
+    const originalDay = Number(turno.fecha.slice(8, 10))
+    const candidate = new Date(target.getFullYear(), target.getMonth(), originalDay)
+    if (candidate.getMonth() !== target.getMonth()) return []
+    return [
+      {
+        drogueria_id: tenantId,
+        usuario_id: turno.usuario_id,
+        turno: turno.turno,
+        fecha: toDateOnly(candidate.getFullYear(), candidate.getMonth(), candidate.getDate()),
+      },
+    ]
   })
 
-  // 3. Insertar masivamente
-  const { error: insertError } = await supabase.from('cronogramas').insert(newTurnos)
-  
-  if (insertError) return { error: insertError.message }
+  const { data: inserted, error: insertError } = await supabase
+    .from('cronogramas')
+    .upsert(newTurnos, {
+      onConflict: 'drogueria_id,usuario_id,fecha',
+      ignoreDuplicates: true,
+    })
+    .select('id')
+
+  if (insertError) {
+    console.error('No se pudieron clonar los turnos:', insertError)
+    return { error: 'No se pudieron clonar los turnos.' }
+  }
 
   revalidatePath('/cronograma')
-  return { success: true, count: newTurnos.length }
+  return { success: true, count: inserted?.length ?? 0 }
 }

@@ -66,7 +66,14 @@ export function isTenantSuspended(
   }
 
   if (drogueria.fecha_vencimiento) {
-    const today = todayIso || new Date().toISOString().slice(0, 10)
+    const today =
+      todayIso ||
+      new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Bogota',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date())
     if (drogueria.fecha_vencimiento < today) {
       return {
         suspended: true,

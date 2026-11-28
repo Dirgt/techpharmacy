@@ -1,48 +1,50 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { requireActiveUser } from '@/lib/auth/session'
+import { addDaysToDateOnly, getBogotaDateString } from '@/lib/date/bogota'
+
+const ALERT_COLUMNS =
+  'inventario_id, producto_id, nombre_producto, cajas, stock_minimo, fecha_vencimiento' as const
 
 export async function getDashboardAlertas() {
+  const auth = await requireActiveUser()
+  if (!auth.ok) return { success: false, data: { vencimientos: [], vencidos: [], stockBajo: [] } }
+
   const supabase = await createClient()
+  const hoy = getBogotaDateString()
+  const limite = addDaysToDateOnly(hoy, 90)
 
-  const hoy = new Date()
-  const fechaLimite = new Date()
-  fechaLimite.setDate(hoy.getDate() + 90)
+  const [{ data: vencimientos }, { data: vencidos }, { data: stockCandidates }] = await Promise.all([
+    supabase
+      .from('vista_inventario_completo')
+      .select(ALERT_COLUMNS)
+      .gte('fecha_vencimiento', hoy)
+      .lte('fecha_vencimiento', limite)
+      .order('fecha_vencimiento', { ascending: true })
+      .limit(10),
+    supabase
+      .from('vista_inventario_completo')
+      .select(ALERT_COLUMNS)
+      .lt('fecha_vencimiento', hoy)
+      .order('fecha_vencimiento', { ascending: false })
+      .limit(5),
+    supabase
+      .from('vista_inventario_completo')
+      .select(ALERT_COLUMNS)
+      .order('cajas', { ascending: true })
+      .limit(100),
+  ])
 
-  const hoyStr = hoy.toISOString().split('T')[0]
-  const limiteStr = fechaLimite.toISOString().split('T')[0]
-
-  const { data: inventarioAll } = await supabase
-    .from('vista_inventario_completo')
-    .select('inventario_id, producto_id, nombre_producto, cajas, stock_minimo, fecha_vencimiento')
-    .order('fecha_vencimiento', { ascending: true })
-
-  const rows = inventarioAll || []
-
-  const vencimientos = rows
-    .filter(
-      (item) =>
-        Boolean(item.fecha_vencimiento) &&
-        item.fecha_vencimiento! >= hoyStr &&
-        item.fecha_vencimiento! <= limiteStr
-    )
-    .slice(0, 10)
-
-  const vencidos = rows
-    .filter((item) => Boolean(item.fecha_vencimiento) && item.fecha_vencimiento! < hoyStr)
-    .sort((a, b) => (b.fecha_vencimiento || '').localeCompare(a.fecha_vencimiento || ''))
-    .slice(0, 5)
-
-  const stockBajo = [...rows]
+  const stockBajo = (stockCandidates || [])
     .filter((item) => (item.cajas ?? 0) <= (item.stock_minimo ?? 2))
-    .sort((a, b) => (a.cajas ?? 0) - (b.cajas ?? 0))
     .slice(0, 10)
 
   return {
     success: true,
     data: {
-      vencimientos,
-      vencidos,
+      vencimientos: vencimientos || [],
+      vencidos: vencidos || [],
       stockBajo,
     },
   }

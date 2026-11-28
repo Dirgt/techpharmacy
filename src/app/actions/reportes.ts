@@ -1,20 +1,28 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/auth/session'
+import { requireActiveUser, requireAdmin } from '@/lib/auth/session'
+import {
+  addDaysToDateOnly,
+  getBogotaDateString,
+  getBogotaDayRange,
+  getBogotaMonthRange,
+  getBogotaMonthString,
+} from '@/lib/date/bogota'
+import { fetchAllPages } from '@/lib/supabase/fetch-all'
 
 export async function getVentasDelDia() {
+  const auth = await requireActiveUser()
+  if (!auth.ok) return { success: false, data: [], error: auth.error }
+
   const supabase = await createClient()
-  
-  const ahora = new Date()
-  const inicioDia = new Date(Date.UTC(ahora.getUTCFullYear(), ahora.getUTCMonth(), ahora.getUTCDate(), 0, 0, 0, 0)).toISOString()
-  const finDia = new Date(Date.UTC(ahora.getUTCFullYear(), ahora.getUTCMonth(), ahora.getUTCDate(), 23, 59, 59, 999)).toISOString()
+  const { start, endExclusive } = getBogotaDayRange()
 
   const { data: facturas, error } = await supabase
     .from('facturas')
     .select(`*, vendedor:vendedor_id ( full_name, role ), detalles:factura_detalles ( cantidad_cajas, cantidad_blisters, cantidad_unidades, precio_unitario, producto:producto_id ( nombre, codigo ) )`)
-    .gte('created_at', inicioDia)
-    .lte('created_at', finDia)
+    .gte('created_at', start)
+    .lt('created_at', endExclusive)
     .order('created_at', { ascending: false })
 
   if (error) return { success: false, data: [] }
@@ -22,21 +30,41 @@ export async function getVentasDelDia() {
 }
 
 export async function getReporteFinancieroDiario() {
+  const auth = await requireAdmin()
+  if (!auth.ok) return { success: false, data: { facturas: [], gastos: [], compras: [] }, error: auth.error }
+
   const supabase = await createClient()
-  
-  const ahora = new Date()
-  const inicioDia = new Date(Date.UTC(ahora.getUTCFullYear(), ahora.getUTCMonth(), ahora.getUTCDate(), 0, 0, 0, 0)).toISOString()
-  const finDia = new Date(Date.UTC(ahora.getUTCFullYear(), ahora.getUTCMonth(), ahora.getUTCDate(), 23, 59, 59, 999)).toISOString()
+  const { start, endExclusive } = getBogotaDayRange()
 
   const [{ data: facturas }, { data: gastos }, { data: compras }] = await Promise.all([
-    supabase
-      .from('facturas')
-      .select('total, metodo_pago, estado_pago, pago_efectivo, pago_tarjeta, pago_transferencia')
-      .neq('estado_pago', 'anulada')
-      .gte('created_at', inicioDia)
-      .lte('created_at', finDia),
-    supabase.from('gastos').select('monto, tipo').gte('created_at', inicioDia).lte('created_at', finDia),
-    supabase.from('compras').select('total, metodo_pago, estado_pago').gte('created_at', inicioDia).lte('created_at', finDia),
+    fetchAllPages((from, to) =>
+      supabase
+        .from('facturas')
+        .select('total, metodo_pago, estado_pago, pago_efectivo, pago_tarjeta, pago_transferencia')
+        .neq('estado_pago', 'anulada')
+        .gte('created_at', start)
+        .lt('created_at', endExclusive)
+        .order('id', { ascending: true })
+        .range(from, to)
+    ),
+    fetchAllPages((from, to) =>
+      supabase
+        .from('gastos')
+        .select('monto, tipo')
+        .gte('created_at', start)
+        .lt('created_at', endExclusive)
+        .order('id', { ascending: true })
+        .range(from, to)
+    ),
+    fetchAllPages((from, to) =>
+      supabase
+        .from('compras')
+        .select('total, metodo_pago, estado_pago')
+        .gte('created_at', start)
+        .lt('created_at', endExclusive)
+        .order('id', { ascending: true })
+        .range(from, to)
+    ),
   ])
 
   return {
@@ -50,82 +78,54 @@ export async function getReporteFinancieroDiario() {
 }
 
 export async function getIngresosGastosMensuales() {
+  const auth = await requireAdmin()
+  if (!auth.ok) return { success: false, data: [], error: auth.error }
+
+  // Agregado por día de Colombia en la base: llegan 7 filas, no cada venta.
   const supabase = await createClient()
-  
-  // Últimos 7 días para el gráfico
-  const fin = new Date()
-  const inicio = new Date()
-  inicio.setDate(fin.getDate() - 6)
-  inicio.setHours(0,0,0,0)
-
-  const inicioIso = inicio.toISOString()
-  const [{ data: facturas }, { data: gastos }, { data: compras }] = await Promise.all([
-    supabase
-      .from('facturas')
-      .select('total, created_at')
-      .neq('estado_pago', 'anulada')
-      .gte('created_at', inicioIso),
-    supabase.from('gastos').select('monto, created_at').gte('created_at', inicioIso),
-    supabase.from('compras').select('total, created_at').gte('created_at', inicioIso),
-  ])
-
-  // Agrupar por día (YYYY-MM-DD)
-  const porDia: Record<string, { fecha: string, ingresos: number, gastos: number }> = {}
-  
-  for(let i=0; i<7; i++) {
-    const d = new Date(inicio)
-    d.setDate(d.getDate() + i)
-    const fechaStr = d.toISOString().split('T')[0]
-    porDia[fechaStr] = { fecha: fechaStr, ingresos: 0, gastos: 0 }
+  const { data, error } = await supabase.rpc('serie_ingresos_gastos', { p_dias: 7 })
+  if (error) {
+    console.error('Error consultando ingresos y gastos:', error)
+    return { success: false, data: [] }
   }
 
-  facturas?.forEach(f => {
-    if (!f.created_at) return
-    const d = f.created_at.split('T')[0]
-    if (porDia[d]) porDia[d].ingresos += Number(f.total || 0)
-  })
-  
-  gastos?.forEach(g => {
-    if (!g.created_at) return
-    const d = g.created_at.split('T')[0]
-    if (porDia[d]) porDia[d].gastos += Number(g.monto || 0)
-  })
-
-  compras?.forEach(c => {
-    if (!c.created_at) return
-    const d = c.created_at.split('T')[0]
-    if (porDia[d]) porDia[d].gastos += Number(c.total || 0)
-  })
-
-  return { success: true, data: Object.values(porDia).sort((a,b) => a.fecha.localeCompare(b.fecha)) }
+  return {
+    success: true,
+    data: (data || []).map((d) => ({
+      fecha: String(d.fecha),
+      ingresos: Number(d.ingresos || 0),
+      gastos: Number(d.gastos || 0),
+    })),
+  }
 }
 
 export async function getTopProductos() {
+  const auth = await requireAdmin()
+  if (!auth.ok) return { success: false, data: [], error: auth.error }
+
   const supabase = await createClient()
-  
-  const { data, error } = await supabase
-    .from('factura_detalles')
-    .select(`cantidad_cajas, cantidad_blisters, cantidad_unidades, producto_id, producto:productos ( nombre )`)
+  const startDate = addDaysToDateOnly(getBogotaDateString(), -29)
+  const { start } = getBogotaDayRange(startDate)
 
-  if (error || !data) return { success: false, data: [] }
-
-  const counts: Record<string, { name: string, cantidad: number }> = {}
-  
-  data.forEach(d => {
-    if (!d.producto || !d.producto_id) return
-    const prod = Array.isArray(d.producto) ? d.producto[0] : d.producto
-    const nombre = prod?.nombre || 'Desconocido'
-    const total = (d.cantidad_cajas || 0) + (d.cantidad_blisters || 0) * 0.1 + (d.cantidad_unidades || 0) * 0.01 // Aproximación
-    if (!counts[d.producto_id]) counts[d.producto_id] = { name: nombre, cantidad: 0 }
-    counts[d.producto_id].cantidad += total
+  // Agregado en la base: últimos 30 días, sin anuladas, en cajas equivalentes reales.
+  const { data, error } = await supabase.rpc('ventas_por_producto', {
+    p_desde: start,
+    p_limite: 10,
+    p_orden: 'cantidad',
   })
 
-  const top10 = Object.values(counts)
-    .sort((a,b) => b.cantidad - a.cantidad)
-    .slice(0, 10)
-    .map(x => ({ name: x.name, ventas: Math.round(x.cantidad) }))
+  if (error || !data) {
+    if (error) console.error('Error consultando top de productos:', error)
+    return { success: false, data: [] }
+  }
 
-  return { success: true, data: top10 }
+  return {
+    success: true,
+    data: data.map((item) => ({
+      name: item.nombre || 'Desconocido',
+      ventas: Math.round(Number(item.cajas_equivalentes || 0) * 100) / 100,
+    })),
+  }
 }
 
 export interface PedidoSugeridoItem {
@@ -144,76 +144,32 @@ export async function getPedidoSugerido(): Promise<{
   success: boolean
   data: PedidoSugeridoItem[]
 }> {
+  const auth = await requireAdmin()
+  if (!auth.ok) return { success: false, data: [] }
+
+  // Misma regla que antes (demanda de 30 días frente a stock vigente), calculada
+  // en la base: solo llegan los productos que hay que pedir.
   const supabase = await createClient()
-  const hace30Dias = new Date()
-  hace30Dias.setDate(hace30Dias.getDate() - 30)
-
-  const [{ data: invRows }, { data: detallesRows }] = await Promise.all([
-    supabase
-      .from('inventario')
-      .select(
-        'producto_id, cajas, blisters, unidades, blisters_por_caja, unidades_por_blister, stock_minimo, producto:productos ( id, codigo, nombre, principio_activo, laboratorio:laboratorios ( nombre ) )'
-      ),
-    supabase
-      .from('factura_detalles')
-      .select(
-        'producto_id, cantidad_cajas, cantidad_blisters, cantidad_unidades, factura:facturas!inner ( estado_pago, created_at )'
-      )
-      .neq('factura.estado_pago', 'anulada')
-      .gte('factura.created_at', hace30Dias.toISOString()),
-  ])
-
-  const bpcByProd = new Map<string, { bpc: number; upb: number }>()
-  for (const inv of invRows || []) {
-    bpcByProd.set(inv.producto_id, {
-      bpc: Math.max(inv.blisters_por_caja || 1, 1),
-      upb: Math.max(inv.unidades_por_blister || 1, 1),
-    })
+  const { data, error } = await supabase.rpc('pedido_sugerido')
+  if (error) {
+    console.error('Error calculando pedido sugerido:', error)
+    return { success: false, data: [] }
   }
 
-  const ventasPorProducto = new Map<string, number>()
-  for (const det of detallesRows || []) {
-    if (!det.producto_id) continue
-    const ratios = bpcByProd.get(det.producto_id) || { bpc: 1, upb: 1 }
-    const equivCajas =
-      (det.cantidad_cajas || 0) +
-      (det.cantidad_blisters || 0) / ratios.bpc +
-      (det.cantidad_unidades || 0) / (ratios.bpc * ratios.upb)
-    ventasPorProducto.set(
-      det.producto_id,
-      (ventasPorProducto.get(det.producto_id) || 0) + equivCajas
-    )
+  return {
+    success: true,
+    data: (data || []).map((row) => ({
+      producto_id: row.producto_id,
+      codigo: row.codigo,
+      nombre: row.nombre,
+      principio_activo: row.principio_activo ?? null,
+      laboratorio: row.laboratorio || 'Genérico',
+      stock_actual_cajas: Number(row.stock_actual_cajas || 0),
+      stock_minimo: Number(row.stock_minimo ?? 2),
+      ventas_30d_cajas: Number(row.ventas_30d_cajas || 0),
+      sugerido_cajas: Number(row.sugerido_cajas || 0),
+    })),
   }
-
-  const sugeridos: PedidoSugeridoItem[] = []
-  for (const inv of invRows || []) {
-    const prod = Array.isArray(inv.producto) ? inv.producto[0] : inv.producto
-    if (!prod) continue
-    const lab = Array.isArray(prod.laboratorio) ? prod.laboratorio[0] : prod.laboratorio
-
-    const stockActual = Number(inv.cajas || 0)
-    const stockMinimo = Number(inv.stock_minimo ?? 2)
-    const demanda30d = Number((ventasPorProducto.get(inv.producto_id) || 0).toFixed(1))
-    const objetivo = Math.max(demanda30d, stockMinimo * 2)
-    const sugerido = Math.max(0, Math.ceil(objetivo - stockActual))
-
-    if (sugerido > 0) {
-      sugeridos.push({
-        producto_id: inv.producto_id,
-        codigo: prod.codigo,
-        nombre: prod.nombre,
-        principio_activo: prod.principio_activo ?? null,
-        laboratorio: lab?.nombre || 'Genérico',
-        stock_actual_cajas: stockActual,
-        stock_minimo: stockMinimo,
-        ventas_30d_cajas: demanda30d,
-        sugerido_cajas: sugerido,
-      })
-    }
-  }
-
-  sugeridos.sort((a, b) => b.sugerido_cajas - a.sugerido_cajas)
-  return { success: true, data: sugeridos }
 }
 
 export interface AuditLogItem {
@@ -262,26 +218,37 @@ export async function getVentasMesContable(mes?: string) {
   const auth = await requireAdmin()
   if (!auth.ok) return { success: false, data: [], error: auth.error }
 
-  const targetMonth =
-    mes && /^\d{4}-\d{2}$/.test(mes) ? mes : new Date().toISOString().slice(0, 7)
-  const [yearStr, monthStr] = targetMonth.split('-')
-  const year = Number(yearStr)
-  const monthIdx = Number(monthStr) - 1
-  const inicio = new Date(Date.UTC(year, monthIdx, 1, 0, 0, 0, 0)).toISOString()
-  const fin = new Date(Date.UTC(year, monthIdx + 1, 0, 23, 59, 59, 999)).toISOString()
+  const targetMonth = mes && /^\d{4}-\d{2}$/.test(mes) ? mes : getBogotaMonthString()
+  const { start, endExclusive } = getBogotaMonthRange(targetMonth)
 
   const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('facturas')
-    .select(
-      'numero, created_at, cliente_nombre, cliente_documento, tipo_venta, metodo_pago, estado_pago, subtotal_bruto, descuento_monto, iva_total, total, monto_abonado, pago_efectivo, pago_tarjeta, pago_transferencia'
-    )
-    .gte('created_at', inicio)
-    .lte('created_at', fin)
-    .order('numero', { ascending: true })
+  // Un mes puede superar las 1.000 ventas: se pagina para que el export contable salga completo.
+  const { data, error, truncated } = await fetchAllPages(
+    (from, to) =>
+      supabase
+        .from('facturas')
+        .select(
+          'numero, created_at, cliente_nombre, cliente_documento, tipo_venta, metodo_pago, estado_pago, subtotal_bruto, descuento_monto, iva_total, total, monto_abonado, pago_efectivo, pago_tarjeta, pago_transferencia'
+        )
+        .gte('created_at', start)
+        .lt('created_at', endExclusive)
+        .order('numero', { ascending: true })
+        .range(from, to),
+    { maxRows: 50000 }
+  )
 
-  if (error) return { success: false, data: [], error: error.message }
-  return { success: true, data: data || [], mes: targetMonth }
+  if (error) {
+    console.error('Error exportando ventas del mes:', error)
+    return { success: false, data: [], error: 'No se pudieron consultar las ventas del mes.' }
+  }
+  if (truncated) {
+    return {
+      success: false,
+      data: [],
+      error: 'El mes supera 50.000 ventas; contacta soporte para exportarlo por partes.',
+    }
+  }
+  return { success: true, data, mes: targetMonth }
 }
 
 export interface HistorialCajaItem {

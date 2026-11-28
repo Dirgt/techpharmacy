@@ -1,34 +1,32 @@
 import { redirect } from 'next/navigation'
 import { requireAdmin } from '@/lib/auth/session'
 import { getCompras, getProveedores } from '@/app/actions/tesoreria'
-import { getInventario, getProductos } from '@/app/actions/inventario'
 import { getSesionCajaAbierta } from '@/app/actions/caja'
-import ComprasClient from './compras-client'
+import { ComprasLoader } from './compras-loader'
 
 export default async function ComprasPage() {
   const auth = await requireAdmin()
   if (!auth.ok) redirect('/dashboard')
 
-  const [comprasRes, proveedoresRes, productosRes, cajaRes, inventarioRes] = await Promise.all([
+  // Productos, costos y stock salen del catálogo local del navegador; aquí solo
+  // viajan las compras recientes/pendientes y los proveedores.
+  const [comprasRes, proveedoresRes, cajaRes] = await Promise.all([
     getCompras(),
     getProveedores(),
-    getProductos(),
     getSesionCajaAbierta(),
-    getInventario(),
   ])
 
   const compras = comprasRes.success && comprasRes.data ? comprasRes.data : []
   const proveedores = proveedoresRes.success && proveedoresRes.data ? proveedoresRes.data : []
-  const productos = productosRes.success && productosRes.data ? productosRes.data : []
 
   return (
-    <ComprasClient
+    <ComprasLoader
+      drogueriaId={auth.profile.drogueria_id}
       initialData={compras}
       proveedores={proveedores}
-      productos={productos}
       caja={cajaRes}
-      inventario={inventarioRes}
       drogueria={auth.profile.drogueria}
+      historialDesde={comprasRes.success ? (comprasRes.desde ?? null) : null}
     />
   )
 }

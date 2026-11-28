@@ -76,7 +76,9 @@ Ideal para arrancar una droguería nueva en minutos o actualizar precios/lotes p
 
 ---
 
-## 4. Caja, Facturación (POS), Cartera y Anulaciones
+## 4. Caja, Punto de Venta, Cartera y Anulaciones
+
+> **Alcance fiscal actual:** TechPharmacy registra la operación comercial y genera un **comprobante interno de venta**. No genera CUFE/CUDE, XML, firma digital ni validación ante la DIAN, por lo que el comprobante **no reemplaza la factura electrónica ni el documento equivalente electrónico**. Cada droguería debe continuar emitiendo su documento fiscal mediante su proveedor tecnológico o la solución que le corresponda hasta que se habilite una integración DIAN certificada.
 
 ### 4.1 Apertura de Caja (obligatoria para facturar)
 Antes de registrar ventas, el vendedor o administrador debe hacer clic en **Abrir Caja** e ingresar la base en efectivo inicial de la gaveta. En la barra superior siempre verás si la caja está **Caja Abierta** (verde) o **Caja Cerrada** (ámbar).
@@ -122,7 +124,7 @@ Antes de registrar ventas, el vendedor o administrador debe hacer clic en **Abri
      > 4. Cuando ves el aviso verde **`Cuadrado exacto ($35.000)`**, el botón **FACTURAR E IMPRIMIR** se habilita (si falta o sobra plata, el sistema bloquea el cobro para evitar errores de digitación).  
      > 5. **Impacto en caja:** al cerrar turno, **únicamente los `$20.000` en efectivo suman al dinero esperado en gaveta**, mientras que los `$15.000` de Nequi se reflejan en Transferencias en Ventas del Día, tirilla y Reportes.
 
-5. **Emitir, Imprimir en Tirilla POS o Enviar por WhatsApp:** al confirmar, el sistema asigna un **consecutivo independiente exclusivo de tu droguería** (con prefijo opcional si lo configuraste), descuenta primero el lote vigente más próximo a vencer (FEFO) de forma atómica y abre el comprobante donde puedes:
+5. **Registrar venta, imprimir comprobante interno o enviar por WhatsApp:** al confirmar, el sistema asigna un **consecutivo interno independiente exclusivo de tu droguería** (con prefijo opcional si lo configuraste), descuenta primero el lote vigente más próximo a vencer (FEFO) de forma atómica y abre el comprobante donde puedes:
    - Elegir el formato exacto de impresión: **Tirilla 80mm**, **Tirilla 58mm** o **Carta**, incluyendo datos fiscales, desglose de pago mixto si aplica, resolución opcional y pie de página personalizado.
    - Escribir opcionalmente el celular del cliente y presionar **WhatsApp** para enviarle el resumen de la compra directamente sin costo adicional.
 

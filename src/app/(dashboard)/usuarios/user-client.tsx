@@ -223,7 +223,7 @@ export function UserClient({ initialUsers }: UserClientProps) {
                       type="password" 
                       required 
                       className="pl-12 bg-slate-50/50 border-slate-200 rounded-2xl h-14 text-sm font-bold focus:bg-white focus:ring-[4px] focus:ring-indigo-600/10 focus:border-indigo-600 transition-all shadow-sm" 
-                      placeholder="Mínimo 6 caracteres"
+                      placeholder="Mínimo 8 caracteres"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                     />
@@ -362,7 +362,7 @@ export function UserClient({ initialUsers }: UserClientProps) {
                   type="password" 
                   value={newConfigPassword}
                   onChange={(e) => setNewConfigPassword(e.target.value)}
-                  placeholder="Mínimo 6 caracteres"
+                  placeholder="Mínimo 8 caracteres"
                   className="h-12 rounded-xl bg-slate-50 border-slate-200 font-medium px-4"
                   required
                 />

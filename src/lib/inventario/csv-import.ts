@@ -21,6 +21,7 @@ export interface CsvInventarioRow {
   blisters_por_caja: number
   unidades_por_blister: number
   requiere_formula: boolean
+  iva_porcentaje: 0 | 5 | 19
 }
 
 export interface CsvParseError {
@@ -48,6 +49,7 @@ export function generateInventarioCsvTemplate(): string {
     'blisters_por_caja',
     'unidades_por_blister',
     'requiere_formula',
+    'iva_porcentaje',
   ]
   const sample1 = [
     '7702057070112',
@@ -68,6 +70,7 @@ export function generateInventarioCsvTemplate(): string {
     '10',
     '10',
     'NO',
+    '0',
   ]
   const sample2 = [
     '7703153000123',
@@ -88,6 +91,7 @@ export function generateInventarioCsvTemplate(): string {
     '5',
     '10',
     'SI',
+    '0',
   ]
 
   return '\uFEFF' + [headers.join(';'), sample1.join(';'), sample2.join(';')].join('\n')
@@ -226,6 +230,12 @@ export function parseInventarioCsv(csvText: string): {
 
     const rawFormula = (record.requiere_formula || '').trim().toLowerCase()
     const requiere_formula = ['si', 'sí', 'true', '1', 'x'].includes(rawFormula)
+    const ivaRaw = parseNumber(record.iva_porcentaje, 0)
+    if (![0, 5, 19].includes(ivaRaw)) {
+      errors.push({ line: lineNum, message: 'El IVA debe ser 0, 5 o 19.' })
+      continue
+    }
+    const iva_porcentaje = ivaRaw as 0 | 5 | 19
 
     rows.push({
       codigo,
@@ -250,6 +260,7 @@ export function parseInventarioCsv(csvText: string): {
       blisters_por_caja: Math.max(1, Math.floor(parseNumber(record.blisters_por_caja, 1))),
       unidades_por_blister: Math.max(1, Math.floor(parseNumber(record.unidades_por_blister, 1))),
       requiere_formula,
+      iva_porcentaje,
     })
   }
 

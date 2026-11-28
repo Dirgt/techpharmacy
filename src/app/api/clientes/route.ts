@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { CrearClienteSchema } from '@/lib/validations/cliente.schema'
 import { requireActiveUser } from '@/lib/auth/session'
+import { mensajeErrorBD } from '@/lib/errors'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,10 +14,13 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = await createClient()
-  const q = req.nextUrl.searchParams.get('q')?.trim() || ''
-  
-  const page = parseInt(req.nextUrl.searchParams.get('page') || '1')
-  const limit = parseInt(req.nextUrl.searchParams.get('limit') || '20')
+  const rawQ = req.nextUrl.searchParams.get('q')?.trim() || ''
+  const q = rawQ.replace(/[^\p{L}\p{N}\s.-]/gu, '').slice(0, 60)
+
+  const rawPage = Number(req.nextUrl.searchParams.get('page') || 1)
+  const rawLimit = Number(req.nextUrl.searchParams.get('limit') || 20)
+  const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1
+  const limit = Number.isFinite(rawLimit) && rawLimit >= 1 ? Math.min(50, Math.floor(rawLimit)) : 20
   const offset = (page - 1) * limit
 
   let query = supabase
@@ -30,8 +34,11 @@ export async function GET(req: NextRequest) {
   }
 
   const { data, error, count } = await query
-  if (error) return NextResponse.json({ success: false, data: [], error: error.message }, { status: 500 })
-  
+  if (error) {
+    console.error('Error buscando clientes:', error)
+    return NextResponse.json({ success: false, data: [], error: 'No se pudieron buscar los clientes.' }, { status: 500 })
+  }
+
   return NextResponse.json({ 
     success: true, 
     data: data || [],
@@ -48,8 +55,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: auth.error }, { status: 401 })
   }
 
+  if (!auth.profile.drogueria_id) {
+    return NextResponse.json({ success: false, error: 'No hay una droguería activa.' }, { status: 400 })
+  }
+
   const supabase = await createClient()
-  const body = await req.json()
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ success: false, error: 'El cuerpo JSON no es válido.' }, { status: 400 })
+  }
 
   const validation = CrearClienteSchema.safeParse(body)
   if (!validation.success) {
@@ -60,7 +76,8 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await supabase
     .from('clientes')
-    .insert({ 
+    .insert({
+      drogueria_id: auth.profile.drogueria_id,
       nombre: dataInput.nombre.trim(), 
       documento: dataInput.documento || null, 
       tipo_doc: dataInput.tipo_doc || null, 
@@ -73,6 +90,12 @@ export async function POST(req: NextRequest) {
     .select()
     .single()
 
-  if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+  if (error) {
+    console.error('Error creando cliente:', error)
+    return NextResponse.json(
+      { success: false, error: mensajeErrorBD(error, 'No se pudo registrar el cliente.') },
+      { status: 500 }
+    )
+  }
   return NextResponse.json({ success: true, data })
 }

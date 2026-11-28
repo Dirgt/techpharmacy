@@ -19,6 +19,7 @@ import { toast } from 'sonner'
 import { IngresosGastosChart } from '@/components/reportes/ingresos-gastos-chart'
 import { TopProductosChart } from '@/components/reportes/top-productos-chart'
 import { formatCurrency } from '@/lib/utils'
+import { getBogotaMonthString } from '@/lib/date/bogota'
 import {
   AuditLogItem,
   getVentasMesContable,
@@ -64,7 +65,7 @@ export default function ReportesClient({
   const { facturas, compras, gastos } = reporte
   const [activeTab, setActiveTab] = useState<'resumen' | 'cajas' | 'pedido' | 'auditoria'>('resumen')
   const [exportingMes, setExportingMes] = useState(false)
-  const [mesContable, setMesContable] = useState(() => new Date().toISOString().slice(0, 7))
+  const [mesContable, setMesContable] = useState(() => getBogotaMonthString())
   const [searchLog, setSearchLog] = useState('')
 
   const finanzas = useMemo(() => {

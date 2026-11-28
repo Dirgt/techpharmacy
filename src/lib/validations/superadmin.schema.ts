@@ -1,3 +1,4 @@
+import './zod-es.ts'
 import { z } from 'zod'
 import { API_SCOPES } from '../api/api-key-utils.ts'
 
@@ -63,7 +64,10 @@ export type ToggleDrogueriaStatusInput = z.infer<typeof ToggleDrogueriaStatusSch
 export const CreateTenantUserSchema = z
   .object({
     email: z.string().trim().email('Correo electrónico inválido'),
-    password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
+    password: z
+      .string()
+      .min(8, 'La contraseña debe tener al menos 8 caracteres')
+      .max(72, 'La contraseña admite máximo 72 caracteres'),
     full_name: z.string().trim().min(2, 'El nombre completo es obligatorio'),
     username: z.string().trim().min(2, 'El usuario es obligatorio'),
     role: z.enum(['superadmin', 'admin', 'vendedor']),

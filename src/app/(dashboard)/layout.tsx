@@ -52,7 +52,7 @@ export default async function DashboardLayout({
 
           <div className="flex items-center gap-2 sm:gap-3 ml-auto">
             {isSuperAdmin && (
-              <Link
+              <Link prefetch={false}
                 href="/droguerias"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black border bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100 transition-colors"
               >
@@ -61,7 +61,7 @@ export default async function DashboardLayout({
               </Link>
             )}
             {(!isSuperAdmin || hasActiveTenant) && (
-              <Link
+              <Link prefetch={false}
                 href="/facturas"
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black border transition-colors ${
                   cajaAbierta
@@ -76,7 +76,7 @@ export default async function DashboardLayout({
               </Link>
             )}
 
-            <Link
+            <Link prefetch={false}
               href="/configuracion"
               className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100/80 hover:bg-slate-200/70 transition-colors border border-slate-200/60"
             >

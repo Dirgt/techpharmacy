@@ -7,6 +7,7 @@ import { requireSuperAdmin } from '@/lib/auth/session'
 import { invalidateMiddlewareProfileCache } from '@/lib/supabase/middleware'
 import { invalidateTenantHostCache } from '@/lib/tenant/resolve'
 import { generateApiKeyPair } from '@/lib/api/api-key-utils'
+import { fetchAllPages } from '@/lib/supabase/fetch-all'
 import {
   AssignUserInput,
   AssignUserSchema,
@@ -122,34 +123,43 @@ export async function getPlatformOverview(): Promise<{
 
     const adminClient = getAdminClient()
 
+    const listAllAuthUsers = async () => {
+      const users: Array<{
+        id: string
+        email?: string | null
+        last_sign_in_at?: string | null
+        created_at?: string | null
+        user_metadata?: { full_name?: unknown } | null
+      }> = []
+      for (let page = 1; page <= 50; page++) {
+        const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage: 1000 })
+        if (error) return { users, error }
+        users.push(...data.users)
+        if (data.users.length < 1000) break
+      }
+      return { users, error: null }
+    }
+
+    // Los conteos y el volumen por droguería se calculan en SQL (platform_tenant_metrics):
+    // antes se descargaban tablas completas y PostgREST las cortaba en 1.000 filas.
     const [
       { data: droguerias, error: drogueriasErr },
       { data: profiles, error: profilesErr },
-      { data: authUsersData, error: authUsersErr },
-      { data: productos },
-      { data: facturas },
-      { data: clientes },
-      { data: compras },
-      { data: cajas },
+      authUsersRes,
+      { data: metricas, error: metricasErr },
       { data: apiKeysRows },
     ] = await Promise.all([
       adminClient.from('droguerias').select('*').order('created_at', { ascending: true }),
-      adminClient
-        .from('profiles')
-        .select('id, username, full_name, role, status, drogueria_id, created_at')
-        .order('created_at', { ascending: false }),
-      adminClient.auth.admin.listUsers({ page: 1, perPage: 200 }),
-      adminClient.from('productos').select('id, drogueria_id'),
-      adminClient
-        .from('facturas')
-        .select('id, drogueria_id, total, created_at')
-        .neq('estado_pago', 'anulada'),
-      adminClient.from('clientes').select('id, drogueria_id'),
-      adminClient.from('compras').select('id, drogueria_id'),
-      adminClient
-        .from('caja_sesiones')
-        .select('id, drogueria_id, estado')
-        .in('estado', ['abierta', 'abierto']),
+      fetchAllPages((from, to) =>
+        adminClient
+          .from('profiles')
+          .select('id, username, full_name, role, status, drogueria_id, created_at')
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: true })
+          .range(from, to)
+      ),
+      listAllAuthUsers(),
+      adminClient.rpc('platform_tenant_metrics'),
       adminClient
         .from('api_keys')
         .select('id, drogueria_id, nombre, key_prefix, scopes, estado, last_used_at, expires_at, created_at')
@@ -158,10 +168,13 @@ export async function getPlatformOverview(): Promise<{
 
     if (drogueriasErr) return { success: false, error: drogueriasErr.message }
     if (profilesErr) return { success: false, error: profilesErr.message }
-    if (authUsersErr) return { success: false, error: authUsersErr.message }
+    if (authUsersRes.error) return { success: false, error: authUsersRes.error.message }
+    if (metricasErr) return { success: false, error: metricasErr.message }
+
+    const metricasMap = new Map((metricas || []).map((m) => [m.drogueria_id, m]))
 
     const authUserMap = new Map(
-      (authUsersData?.users || []).map((u) => [
+      authUsersRes.users.map((u) => [
         u.id,
         { email: u.email ?? null, last_sign_in_at: u.last_sign_in_at ?? null },
       ])
@@ -192,28 +205,39 @@ export async function getPlatformOverview(): Promise<{
       }
     })
 
+    // Cuentas de Auth sin perfil (por ejemplo, registros abiertos antes de cerrar el
+    // signup): no pueden entrar hasta que el superadmin les asigne droguería y rol.
+    const profileIds = new Set((profiles || []).map((p) => p.id))
+    for (const u of authUsersRes.users) {
+      if (profileIds.has(u.id)) continue
+      const metaName = u.user_metadata?.full_name
+      usuarios.push({
+        id: u.id,
+        email: u.email ?? null,
+        username: u.email?.split('@')[0] || u.id.slice(0, 8),
+        full_name: typeof metaName === 'string' && metaName.trim() ? metaName.trim() : null,
+        role: null,
+        status: 'sin_perfil',
+        drogueria_id: null,
+        drogueria_nombre: 'Sin perfil (asignar droguería)',
+        created_at: u.created_at ?? null,
+        last_sign_in_at: u.last_sign_in_at ?? null,
+      })
+    }
+
+    const latest = (a: string | null, b: string | null) => {
+      if (!a) return b
+      if (!b) return a
+      return new Date(b).getTime() > new Date(a).getTime() ? b : a
+    }
+
     const drogueriasOverview: DrogueriaOverview[] = (droguerias || []).map((d) => {
       const tenantUsers = usuarios.filter((u) => u.drogueria_id === d.id)
-      const tenantFacturas = (facturas || []).filter((f) => f.drogueria_id === d.id)
-      const tenantProductos = (productos || []).filter((p) => p.drogueria_id === d.id)
-      const tenantClientes = (clientes || []).filter((c) => c.drogueria_id === d.id)
-      const tenantCompras = (compras || []).filter((c) => c.drogueria_id === d.id)
-      const tenantCajasAbiertas = (cajas || []).filter(
-        (c) => c.drogueria_id === d.id && (c.estado === 'abierta' || c.estado === 'abierto')
-      )
+      const m = metricasMap.get(d.id)
 
-      const volumenFacturado = tenantFacturas.reduce((acc, f) => acc + Number(f.total || 0), 0)
-
-      let ultimaActividad: string | null = d.created_at
-      for (const f of tenantFacturas) {
-        if (f.created_at && (!ultimaActividad || f.created_at > ultimaActividad)) {
-          ultimaActividad = f.created_at
-        }
-      }
+      let ultimaActividad: string | null = latest(d.created_at, m?.ultima_factura_at ?? null)
       for (const u of tenantUsers) {
-        if (u.last_sign_in_at && (!ultimaActividad || u.last_sign_in_at > ultimaActividad)) {
-          ultimaActividad = u.last_sign_in_at
-        }
+        ultimaActividad = latest(ultimaActividad, u.last_sign_in_at)
       }
 
       return {
@@ -242,13 +266,13 @@ export async function getPlatformOverview(): Promise<{
             role: u.role,
           })),
         usuariosTotal: tenantUsers.length,
-        usuariosActivos: tenantUsers.filter((u) => u.status === 'activo').length,
-        productosCount: tenantProductos.length,
-        facturasCount: tenantFacturas.length,
-        clientesCount: tenantClientes.length,
-        comprasCount: tenantCompras.length,
-        cajasAbiertas: tenantCajasAbiertas.length,
-        volumenFacturado,
+        usuariosActivos: tenantUsers.filter((u) => u.status === 'activo' && u.role !== 'superadmin').length,
+        productosCount: Number(m?.productos_count ?? 0),
+        facturasCount: Number(m?.facturas_count ?? 0),
+        clientesCount: Number(m?.clientes_count ?? 0),
+        comprasCount: Number(m?.compras_count ?? 0),
+        cajasAbiertas: Number(m?.cajas_abiertas ?? 0),
+        volumenFacturado: Number(m?.volumen_facturado ?? 0),
         ultimaActividad,
       }
     })
@@ -278,8 +302,8 @@ export async function getPlatformOverview(): Promise<{
           totalDroguerias: drogueriasOverview.length,
           totalUsuarios: usuarios.length,
           usuariosActivos: usuarios.filter((u) => u.status === 'activo').length,
-          totalProductos: (productos || []).length,
-          totalFacturas: (facturas || []).length,
+          totalProductos: drogueriasOverview.reduce((acc, d) => acc + d.productosCount, 0),
+          totalFacturas: drogueriasOverview.reduce((acc, d) => acc + d.facturasCount, 0),
           volumenTotal,
         },
       },
@@ -310,6 +334,7 @@ async function checkDrogueriaUserLimit(
     .select('id', { count: 'exact', head: true })
     .eq('drogueria_id', drogueriaId)
     .eq('status', 'activo')
+    .neq('role', 'superadmin')
 
   if (excludeUserId) {
     query = query.neq('id', excludeUserId)
@@ -497,7 +522,18 @@ export async function createUserForDrogueria(input: CreateTenantUserInput) {
     )
 
     if (profileErr) {
-      return { success: false, error: profileErr.message }
+      // Sin perfil válido la cuenta no sirve: se elimina para no dejar usuarios huérfanos.
+      const { error: cleanupErr } = await adminClient.auth.admin.deleteUser(created.user.id)
+      if (cleanupErr) console.error('No se pudo limpiar el usuario huérfano:', cleanupErr)
+      return {
+        success: false,
+        error:
+          profileErr.code === '23505'
+            ? 'El nombre de usuario ya está en uso.'
+            : profileErr.code === 'P0001'
+              ? profileErr.message
+              : 'No se pudo crear el perfil del usuario.',
+      }
     }
 
     revalidatePath('/droguerias')
@@ -509,6 +545,63 @@ export async function createUserForDrogueria(input: CreateTenantUserInput) {
       error: error instanceof Error ? error.message : 'Error al crear el usuario',
     }
   }
+}
+
+async function crearPerfilFaltante(
+  adminClient: ReturnType<typeof getAdminClient>,
+  userId: string,
+  datos: {
+    drogueria_id: string | null
+    role: AssignUserInput['role']
+    status: AssignUserInput['status']
+  }
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { data: authData, error: authErr } = await adminClient.auth.admin.getUserById(userId)
+  if (authErr || !authData?.user) return { ok: false, error: 'La cuenta no existe en Auth.' }
+
+  const user = authData.user
+  const local = (user.email || '')
+    .split('@')[0]
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9._-]/g, '')
+    .slice(0, 30)
+  const base = local.length >= 3 ? local : `usuario_${userId.slice(0, 8)}`
+  const metaName = user.user_metadata?.full_name
+  const fullName =
+    typeof metaName === 'string' && metaName.trim() ? metaName.trim().slice(0, 120) : base
+
+  // El nombre de usuario es único en toda la plataforma: si está tomado se agrega un sufijo.
+  for (const username of [base, `${base}_${userId.slice(0, 4)}`, `${base}_${userId.slice(0, 8)}`]) {
+    const { error } = await adminClient.from('profiles').insert({
+      id: userId,
+      username,
+      full_name: fullName,
+      role: datos.role,
+      status: datos.status,
+      drogueria_id: datos.drogueria_id,
+    })
+    if (!error) return { ok: true }
+    if (error.code === 'P0001') return { ok: false, error: error.message }
+    if (error.code !== '23505') return { ok: false, error: 'No se pudo crear el perfil del usuario.' }
+
+    // 23505: o el nombre está tomado, o el perfil se creó en paralelo.
+    const { data: existente } = await adminClient.from('profiles').select('id').eq('id', userId).maybeSingle()
+    if (existente) {
+      const { error: updErr } = await adminClient
+        .from('profiles')
+        .update({ drogueria_id: datos.drogueria_id, role: datos.role, status: datos.status })
+        .eq('id', userId)
+      if (!updErr) return { ok: true }
+      return {
+        ok: false,
+        error: updErr.code === 'P0001' ? updErr.message : 'No se pudo actualizar el usuario.',
+      }
+    }
+  }
+
+  return { ok: false, error: 'No hay un nombre de usuario libre para esta cuenta.' }
 }
 
 export async function assignUserDrogueriaAndRole(input: AssignUserInput) {
@@ -537,7 +630,7 @@ export async function assignUserDrogueriaAndRole(input: AssignUserInput) {
       if (limitErr) return { success: false, error: limitErr }
     }
 
-    const { error } = await adminClient
+    const { data: updatedRows, error } = await adminClient
       .from('profiles')
       .update({
         drogueria_id: finalDrogueriaId,
@@ -546,8 +639,22 @@ export async function assignUserDrogueriaAndRole(input: AssignUserInput) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', v.user_id)
+      .select('id')
 
-    if (error) return { success: false, error: error.message }
+    if (error) {
+      return { success: false, error: error.code === 'P0001' ? error.message : 'No se pudo actualizar el usuario.' }
+    }
+
+    // Cuenta de Auth sin perfil: se crea el perfil (antes el UPDATE afectaba 0 filas
+    // y la pantalla decía "actualizado" sin cambiar nada).
+    if (!updatedRows || updatedRows.length === 0) {
+      const created = await crearPerfilFaltante(adminClient, v.user_id, {
+        drogueria_id: finalDrogueriaId,
+        role: v.role,
+        status: v.status,
+      })
+      if (!created.ok) return { success: false, error: created.error }
+    }
 
     invalidateMiddlewareProfileCache(v.user_id)
     revalidatePath('/droguerias')
@@ -675,8 +782,8 @@ export async function resetPlatformUserPassword(input: {
     const auth = await requireSuperAdmin()
     if (!auth.ok) return { success: false, error: auth.error }
 
-    if (!input.user_id || !input.password || input.password.length < 6) {
-      return { success: false, error: 'La contraseña debe tener al menos 6 caracteres' }
+    if (!input.user_id || !input.password || input.password.length < 8 || input.password.length > 72) {
+      return { success: false, error: 'La contraseña debe tener entre 8 y 72 caracteres' }
     }
 
     const adminClient = getAdminClient()

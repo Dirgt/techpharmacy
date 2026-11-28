@@ -20,6 +20,7 @@ import {
   KeyRound,
 } from 'lucide-react'
 import { logout } from '@/app/actions/auth'
+import { limpiarCatalogoLocal } from '@/lib/catalogo/store'
 
 const tenantNavigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, adminOnly: false },
@@ -90,6 +91,7 @@ function SidebarInner({
       <div className="flex h-16 items-center px-6 border-b border-slate-100 bg-slate-50/30">
         <Link
           href={isSuperAdmin && !hasActiveTenant ? '/droguerias' : '/dashboard'}
+          prefetch={false}
           onClick={onNavigate}
           className="flex items-center gap-3 group min-w-0"
         >
@@ -232,7 +234,11 @@ function SidebarInner({
           Mi Perfil
         </Link>
         <button
-          onClick={() => logout()}
+          onClick={async () => {
+            // No deja el catálogo de la droguería guardado en el equipo.
+            await limpiarCatalogoLocal().catch(() => undefined)
+            await logout()
+          }}
           className="flex w-full items-center gap-3 px-4 py-3 text-sm font-bold text-slate-500 rounded-2xl hover:text-red-600 hover:bg-red-50 transition-all duration-200"
         >
           <LogOut className="h-5 w-5" />

@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { Database } from '@/lib/supabase/database.types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -39,9 +38,11 @@ import {
 } from 'lucide-react'
 import {
   createProveedor,
+  getCompras,
   pagarCompraProveedor,
   registrarCompra,
 } from '@/app/actions/tesoreria'
+import { getBogotaMonthString } from '@/lib/date/bogota'
 import { formatCurrency } from '@/lib/utils'
 import type { UserDrogueria } from '@/lib/auth/session'
 import {
@@ -76,7 +77,7 @@ type Compra = Database['public']['Tables']['compras']['Row'] & {
 }
 
 type Proveedor = Database['public']['Tables']['proveedores']['Row']
-type Producto = Database['public']['Tables']['productos']['Row']
+type Producto = Pick<Database['public']['Tables']['productos']['Row'], 'id' | 'codigo' | 'nombre' | 'principio_activo'>
 type Caja = Database['public']['Tables']['caja_sesiones']['Row']
 
 type CompraDetalleDraft = {
@@ -103,6 +104,8 @@ export default function ComprasClient({
   caja,
   inventario = [],
   drogueria = null,
+  historialDesde = null,
+  onCatalogoCambiado,
 }: {
   initialData: Compra[]
   proveedores: Proveedor[]
@@ -114,8 +117,31 @@ export default function ComprasClient({
     cajas?: number | null
   }>
   drogueria?: UserDrogueria | null
+  /** Fecha desde la que se cargó el historial (además de todas las pendientes). */
+  historialDesde?: string | null
+  /** Tras registrar una compra: el stock y los costos del catálogo local cambian. */
+  onCatalogoCambiado?: () => void
 }) {
-  const router = useRouter()
+  // Por defecto llegan las compras pendientes y las de los últimos 90 días; el
+  // historial completo se pide solo si el usuario lo abre.
+  // El historial completo vale mientras la página no traiga datos nuevos (por
+  // ejemplo tras registrar una compra): entonces se vuelve a la vista reciente.
+  const [historial, setHistorial] = useState<{ base: Compra[]; completas: Compra[] } | null>(null)
+  const [cargandoHistorial, setCargandoHistorial] = useState(false)
+  const historialCompleto = historial !== null && historial.base === initialData
+  const compras = historialCompleto ? historial.completas : initialData
+
+  const cargarHistorialCompleto = async () => {
+    setCargandoHistorial(true)
+    const res = await getCompras({ completo: true })
+    setCargandoHistorial(false)
+    if (res.success && res.data) {
+      setHistorial({ base: initialData, completas: res.data as Compra[] })
+    } else {
+      toast.error(res.error || 'No se pudo cargar el historial completo')
+    }
+  }
+
   const [proveedoresList, setProveedoresList] = useState<Proveedor[]>(initialProveedores)
   const [searchTerm, setSearchTerm] = useState('')
   const [filtroEstado, setFiltroEstado] = useState<FiltroEstadoCompra>('todas')
@@ -173,7 +199,8 @@ export default function ComprasClient({
   }, [productos])
 
   const resumenCompras = useMemo(() => {
-    const mesActual = new Date().toISOString().slice(0, 7)
+    // Mes de Colombia (antes UTC: una compra de las 7 p. m. del 30 caía en el mes siguiente).
+    const mesActual = getBogotaMonthString()
     let totalGeneral = 0
     let totalMes = 0
     let totalPorPagar = 0
@@ -183,10 +210,10 @@ export default function ComprasClient({
     let countObservacion = 0
     let totalCajasIngresadas = 0
 
-    for (const c of initialData) {
+    for (const c of compras) {
       const val = Number(c.total || 0)
       totalGeneral += val
-      if ((c.created_at || '').startsWith(mesActual)) {
+      if (c.created_at && getBogotaMonthString(new Date(c.created_at)) === mesActual) {
         totalMes += val
       }
       if (c.estado_pago === 'pagado') {
@@ -207,8 +234,8 @@ export default function ComprasClient({
     const pctPagado =
       totalGeneral > 0 ? Math.round((totalPagado / totalGeneral) * 100) : 100
     const pctConformes =
-      initialData.length > 0
-        ? Math.round(((initialData.length - countObservacion) / initialData.length) * 100)
+      compras.length > 0
+        ? Math.round(((compras.length - countObservacion) / compras.length) * 100)
         : 100
 
     return {
@@ -223,11 +250,11 @@ export default function ComprasClient({
       pctPagado,
       pctConformes,
     }
-  }, [initialData])
+  }, [compras])
 
   const filteredData = useMemo(() => {
     const q = searchTerm.trim().toLowerCase()
-    return initialData.filter((c) => {
+    return compras.filter((c) => {
       if (filtroEstado === 'por_pagar' && c.estado_pago === 'pagado') return false
       if (filtroEstado === 'pagadas' && c.estado_pago !== 'pagado') return false
       if (filtroEstado === 'observacion' && c.estado_recepcion !== 'observacion') return false
@@ -248,7 +275,7 @@ export default function ComprasClient({
           (d.lote || '').toLowerCase().includes(q)
       )
     })
-  }, [initialData, filtroEstado, searchTerm])
+  }, [compras, filtroEstado, searchTerm])
 
   const quickMatches = useMemo(() => {
     const q = productQuickSearch.trim().toLowerCase()
@@ -417,7 +444,9 @@ export default function ComprasClient({
       setObservacionesRecepcion('')
       setProductQuickSearch('')
       setDetalles([])
-      router.refresh()
+      // La lista se actualiza sola (revalidatePath en la acción); el catálogo local
+      // trae el stock y el costo nuevos de los productos comprados.
+      onCatalogoCambiado?.()
     } else {
       toast.error(result.error || 'Error al registrar la compra')
     }
@@ -597,7 +626,7 @@ export default function ComprasClient({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-            <Link
+            <Link prefetch={false}
               href="/proveedores"
               className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-xs sm:text-sm font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20"
             >
@@ -605,7 +634,7 @@ export default function ComprasClient({
               Directorio Proveedores
             </Link>
 
-            {initialData.length > 0 && (
+            {compras.length > 0 && (
               <button
                 type="button"
                 onClick={handleExportCsv}
@@ -661,8 +690,27 @@ export default function ComprasClient({
           <div className="mt-3.5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
             <span className="font-semibold text-slate-500">Este mes:</span>
             <span className="font-black text-slate-800">
-              {formatCurrency(resumenCompras.totalMes)} ({initialData.length} fact.)
+              {formatCurrency(resumenCompras.totalMes)} ({compras.length} fact.)
             </span>
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-2 text-[11px]">
+            <span className="font-semibold text-slate-400">
+              {historialCompleto
+                ? 'Historial completo'
+                : historialDesde
+                  ? `Pendientes + desde ${new Date(historialDesde).toLocaleDateString('es-CO', { timeZone: 'America/Bogota' })}`
+                  : 'Pendientes + últimos 90 días'}
+            </span>
+            {!historialCompleto && (
+              <button
+                type="button"
+                onClick={cargarHistorialCompleto}
+                disabled={cargandoHistorial}
+                className="font-black text-emerald-700 hover:text-emerald-800 disabled:opacity-50 cursor-pointer"
+              >
+                {cargandoHistorial ? 'Cargando…' : 'Ver historial completo'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -781,7 +829,7 @@ export default function ComprasClient({
         <div className="flex flex-wrap items-center gap-1.5 bg-slate-100/90 p-1 rounded-xl self-start lg:self-auto">
           {(
             [
-              { id: 'todas', label: `Todas (${initialData.length})` },
+              { id: 'todas', label: `Todas (${compras.length})` },
               { id: 'por_pagar', label: `Por Pagar (${resumenCompras.countPorPagar})` },
               { id: 'pagadas', label: `Pagadas (${resumenCompras.countPagadas})` },
               ...(resumenCompras.countObservacion > 0
@@ -1046,7 +1094,7 @@ export default function ComprasClient({
                   </Button>
 
                   {proveedoresList.length === 0 && (
-                    <Link
+                    <Link prefetch={false}
                       href="/proveedores"
                       className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 h-11 text-xs font-bold text-slate-700 hover:bg-slate-50"
                     >
@@ -1735,7 +1783,6 @@ export default function ComprasClient({
                     if (res.success) {
                       toast.success(`Factura #${payingCompra.numero_factura} marcada como pagada`)
                       setPayingCompra(null)
-                      router.refresh()
                     } else {
                       toast.error(res.error || 'Error al registrar pago')
                     }

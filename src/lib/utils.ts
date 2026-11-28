@@ -14,7 +14,9 @@ export function calculatePV(
   if (isNaN(c) || c <= 0) return 0
   if (!isNaN(m) && m >= 100) return 0
   if (isNaN(m) || m <= 0) return Math.round(c)
-  return Math.round(c / (1 - m / 100))
+  // Misma aritmética que pos_precio_venta en la base: centavos enteros antes de
+  // dividir, para que los casos de x,5 redondeen igual en ambos lados.
+  return Math.round(Math.round(c * 100) / (100 - m))
 }
 
 const currencyFormatter = new Intl.NumberFormat("es-CO", {

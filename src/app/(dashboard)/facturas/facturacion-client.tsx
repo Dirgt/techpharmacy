@@ -5,17 +5,31 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import { Search, Plus, Minus, Trash2, ShoppingCart, Wallet, ReceiptText, CheckCircle2, BarChart2, FileDown, RefreshCw, ChevronDown, X, Building2, Lock, Ban, AlertTriangle, ArrowLeftRight } from 'lucide-react'
 import { toast } from 'sonner'
-import { anularFactura, crearFactura, FacturaData, FacturaItem, getCartera, marcarComoPagada, registrarAbonoFactura } from '@/app/actions/facturas'
+import {
+  anularVenta,
+  cargarCartera,
+  cargarVentasSesion,
+  cobrarSaldoTotal,
+  crearVenta,
+  registrarAbono,
+  type FacturaItem,
+} from '@/lib/pos/ventas-navegador'
+import type { CatalogoHook } from '@/lib/catalogo/use-catalogo'
+import type { FilaPOS } from '@/lib/catalogo/modelo'
+import { EstadoCatalogo } from '@/components/catalogo/estado-catalogo'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { abrirCaja, cerrarCaja } from '@/app/actions/caja'
 import { GastoModal } from '@/components/tesoreria/gasto-modal'
 import { useBarcodeScanner } from '@/hooks/use-barcode-scanner'
 import { calculatePV, formatCurrency } from '@/lib/utils'
 import { canFulfillWithUnpacking, suggestPackConsolidation } from '@/lib/inventario/fraccionamiento'
 import { calcularEfectivoEsperadoCaja, validateAndNormalizePago, type MetodoPagoPos } from '@/lib/pos/pago-mixto'
+import { aplicarDescuento, calcularIvaLinea, normalizarTarifaIva, type TarifaIva } from '@/lib/pos/montos'
 
 type PresentationMode = 'caja' | 'blister' | 'unidad'
+type CartItem = FacturaItem & { iva_porcentaje: TarifaIva }
+
+const normalizeIvaRate = normalizarTarifaIva
 
 const isFracProduct = (p: any) =>
   Math.max(1, Number(p?.blisters_por_caja) || 1) > 1 ||
@@ -38,17 +52,18 @@ const hasSellableStock = (product: any) =>
   (Number(product?.unidades) || 0) > 0
 
 export function FacturacionClient({
-  inventarioInitial,
+  inventario,
+  catalogo,
   vendedores,
   cajaAbierta,
-  carteraInitial = [],
   userRole = 'vendedor',
   prefijoFactura = null,
 }: {
-  inventarioInitial: any[],
+  /** Catálogo local (IndexedDB) con el stock vendible por lotes vigentes. */
+  inventario: FilaPOS[],
+  catalogo: CatalogoHook,
   vendedores: any[],
   cajaAbierta: any,
-  carteraInitial?: any[],
   userRole?: string,
   prefijoFactura?: string | null,
 }) {
@@ -74,25 +89,25 @@ export function FacturacionClient({
   const equivalentesList = useMemo(() => {
     const rawMolecula = equivalentesSource?.principio_activo?.trim().toLowerCase()
     if (!rawMolecula) return []
-    return inventarioInitial.filter((p) => {
+    return inventario.filter((p) => {
       if (p.producto_id === equivalentesSource.producto_id) return false
       if ((p.principio_activo || '').trim().toLowerCase() !== rawMolecula) return false
       if (isProductBlockedExpired(p)) return false
       return (Number(p.cajas) || 0) > 0 || (Number(p.blisters) || 0) > 0 || (Number(p.unidades) || 0) > 0
     })
-  }, [equivalentesSource, inventarioInitial])
+  }, [equivalentesSource, inventario])
 
   // --- STATE ---
   const [activeTab, setActiveTab] = useState<'pos' | 'ventas'>('pos')
   const [searchTerm, setSearchTerm] = useState('')
-  const [cart, setCart] = useState<FacturaItem[]>([])
+  const [cart, setCart] = useState<CartItem[]>([])
 
   const hasFormulaItems = useMemo(() => {
     return cart.some((item) => {
-      const info = inventarioInitial.find((p) => p.producto_id === item.producto_id)
+      const info = inventario.find((p) => p.producto_id === item.producto_id)
       return Boolean(info?.requiere_formula)
     })
-  }, [cart, inventarioInitial])
+  }, [cart, inventario])
   // --- Vendedor (obligatorio, auto-default al primer vendedor) ---
   const [vendedorId, setVendedorId] = useState<string>(vendedores?.[0]?.id || '')
   // --- Cliente ---
@@ -112,7 +127,6 @@ export function FacturacionClient({
   const [condicionPagoDias, setCondicionPagoDias] = useState<number>(0)
   const [ordenCompra, setOrdenCompra] = useState('')
   const [descuentoPct, setDescuentoPct] = useState<number>(0)
-  const [ivaPct, setIvaPct] = useState<number>(0)
   const [efectivoRecibido, setEfectivoRecibido] = useState<string>('')
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false)
   const [showPrintModal, setShowPrintModal] = useState(false)
@@ -121,7 +135,7 @@ export function FacturacionClient({
   const [isOpeningCaja, setIsOpeningCaja] = useState(false)
   const [montoApertura, setMontoApertura] = useState('0')
   const [ventasHoy, setVentasHoy] = useState<any[]>([])
-  const [cartera, setCartera] = useState<any[]>(carteraInitial)
+  const [cartera, setCartera] = useState<any[]>([])
   const [gastosSesion, setGastosSesion] = useState<any[]>([])
   const [comprasEfectivoSesion, setComprasEfectivoSesion] = useState<any[]>([])
   const [abonosEfectivoSesion, setAbonosEfectivoSesion] = useState<any[]>([])
@@ -134,26 +148,6 @@ export function FacturacionClient({
   const [showCloseCajaModal, setShowCloseCajaModal] = useState(false)
   const [isClosingCaja, setIsClosingCaja] = useState(false)
   const [efectivoCierreManual, setEfectivoCierreManual] = useState('')
-
-  // Obtener numero de factura consecutivo exacto desde la DB
-  useEffect(() => {
-    async function fetchNextFacturaNum() {
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('facturas')
-        .select('numero')
-        .order('numero', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-      if (!error && data) {
-        setNextFacturaNum(data.numero + 1)
-      } else {
-        setNextFacturaNum(1)
-      }
-    }
-    fetchNextFacturaNum()
-  }, [])
 
   const addToCart = useCallback((product: any, preferredMode?: PresentationMode) => {
     if (isProductBlockedExpired(product)) {
@@ -235,7 +229,12 @@ export function FacturacionClient({
                 fieldToIncrement === 'cantidad_blisters' ? newVal : item.cantidad_blisters,
                 fieldToIncrement === 'cantidad_unidades' ? newVal : item.cantidad_unidades
               )
-              return { ...item, [fieldToIncrement]: newVal, precio_linea: newPrice * (1 - (descuentoPct / 100)), precio_unitario_base: newPrice }
+              return {
+                ...item,
+                [fieldToIncrement]: newVal,
+                precio_linea: aplicarDescuento(newPrice, descuentoPct),
+                precio_unitario_base: Math.round(newPrice),
+              }
             }
             return item
           }
@@ -278,9 +277,9 @@ export function FacturacionClient({
       }
 
       added = true
-      const basePrice = calculateLinePrice(product, defCajas, defBlisters, defUnidades)
+      const basePrice = Math.round(calculateLinePrice(product, defCajas, defBlisters, defUnidades))
 
-      const newItem: FacturaItem = {
+      const newItem: CartItem = {
         producto_id: product.producto_id,
         nombre: product.nombre_producto,
         cantidad_cajas: defCajas,
@@ -288,8 +287,9 @@ export function FacturacionClient({
         cantidad_unidades: defUnidades,
         precio_unitario_base: basePrice,
         descuento_porcentaje: descuentoPct,
-        precio_linea: basePrice * (1 - (descuentoPct / 100)),
-        precio_linea_original: basePrice
+        precio_linea: aplicarDescuento(basePrice, descuentoPct),
+        precio_linea_original: basePrice,
+        iva_porcentaje: normalizeIvaRate(product.iva_porcentaje),
       }
       return [...prev, newItem]
     })
@@ -313,8 +313,8 @@ export function FacturacionClient({
     // Only process if we are in POS tab and not currently interacting with an input
     if (activeTab !== 'pos') return
 
-    // Check if the barcode matches any product in inventarioInitial
-    const product = inventarioInitial.find(p => (p.codigo || p.codigo_producto) === barcode)
+    // Check if the barcode matches any product in inventario
+    const product = inventario.find(p => p.codigo === barcode)
 
     if (product) {
       addToCart(product)
@@ -345,31 +345,44 @@ export function FacturacionClient({
   const searchResults = useMemo(() => {
     if (!searchTerm.trim()) return []
     const term = searchTerm.toLowerCase()
-    return inventarioInitial.filter(item =>
-      item.nombre_producto?.toLowerCase().includes(term) ||
-      (item.codigo || item.codigo_producto)?.toLowerCase().includes(term) ||
-      (item.laboratorio || item.laboratorio_nombre)?.toLowerCase().includes(term) ||
-      item.principio_activo?.toLowerCase().includes(term) ||
-      item.seccion?.toLowerCase().includes(term)
-    ).slice(0, 10) // Limit to 10 for performance
-  }, [searchTerm, inventarioInitial])
+    // busqueda = nombre, código, laboratorio, molécula y sección en minúsculas (precalculado).
+    return inventario.filter(item => item.busqueda.includes(term)).slice(0, 10) // Limit to 10 for performance
+  }, [searchTerm, inventario])
 
-  // cartTotal = suma bruta sin descuento ni IVA
-  const cartSubtotalBruto = useMemo(() =>
-    cart.reduce((sum, item) => sum + item.precio_unitario_base, 0)
-    , [cart])
+  const cartSubtotalBruto = useMemo(
+    () => cart.reduce((sum, item) => sum + Math.round(item.precio_unitario_base), 0),
+    [cart]
+  )
 
-  const cartDescuentoMonto = useMemo(() =>
-    cart.reduce((sum, item) => sum + (item.precio_unitario_base - item.precio_linea), 0)
-    , [cart])
+  const cartDescuentoMonto = useMemo(
+    () => cart.reduce(
+      (sum, item) => sum + (Math.round(item.precio_unitario_base) - Math.round(item.precio_linea)),
+      0
+    ),
+    [cart]
+  )
 
-  const cartBaseIva = useMemo(() => cartSubtotalBruto - cartDescuentoMonto, [cartSubtotalBruto, cartDescuentoMonto])
+  const cartBaseIva = useMemo(
+    () => cart.reduce((sum, item) => sum + Math.round(item.precio_linea), 0),
+    [cart]
+  )
 
-  const cartIvaMonto = useMemo(() =>
-    Math.round(cartBaseIva * (ivaPct / 100))
-    , [cartBaseIva, ivaPct])
+  const cartIvaRates = useMemo(
+    () => Array.from(new Set(cart.map((item) => normalizeIvaRate(item.iva_porcentaje)))),
+    [cart]
+  )
+  const cartIvaPct = cartIvaRates.length === 1 ? cartIvaRates[0] : 0
+  const hasMixedIva = cartIvaRates.length > 1
 
-  const cartTotal = useMemo(() => cartBaseIva + cartIvaMonto, [cartBaseIva, cartIvaMonto])
+  const cartIvaMonto = useMemo(
+    () => cart.reduce(
+      (sum, item) => sum + calcularIvaLinea(item.precio_linea, item.iva_porcentaje),
+      0
+    ),
+    [cart]
+  )
+
+  const cartTotal = useMemo(() => Math.round(cartBaseIva + cartIvaMonto), [cartBaseIva, cartIvaMonto])
 
   const pagoEfectivoNum = Number(pagoEfectivoStr.replace(/\D/g, '')) || 0
   const pagoTarjetaNum = Number(pagoTarjetaStr.replace(/\D/g, '')) || 0
@@ -458,41 +471,91 @@ export function FacturacionClient({
 
   const cajaId = cajaAbierta?.id
 
+  // Ventas, cartera y movimientos de la caja se leen directo de Supabase y solo
+  // cuando se necesitan: al abrir "Ventas del Día", al abrir el cierre de caja o
+  // después de cobrar, abonar o anular. Vender no las vuelve a descargar.
   const fetchVentas = useCallback(async () => {
     if (!cajaId) return
     setLoadingVentas(true)
-    try {
-      const [res, carteraData] = await Promise.all([
-        fetch(`/api/ventas-sesion?cajaId=${cajaId}`, { cache: 'no-store' }),
-        getCartera(),
-      ])
-      const json = await res.json()
-      if (json.success) {
-        setVentasHoy(json.data || [])
-        setGastosSesion(json.gastos || [])
-        setComprasEfectivoSesion(json.comprasEfectivo || [])
-        setAbonosEfectivoSesion(json.abonosEfectivo || [])
-      } else {
-        toast.error('Error cargando ventas')
-      }
-      if (Array.isArray(carteraData)) {
-        setCartera(carteraData)
-      }
-    } catch {
-      toast.error('Error de conexión al cargar ventas')
+    const [res, carteraData] = await Promise.all([cargarVentasSesion(cajaId), cargarCartera()])
+    if (res.success) {
+      setVentasHoy(res.ventas)
+      setGastosSesion(res.gastos)
+      setComprasEfectivoSesion(res.comprasEfectivo)
+      setAbonosEfectivoSesion(res.abonosEfectivo)
+    } else {
+      toast.error(res.error)
+    }
+    if (carteraData) {
+      setCartera(carteraData)
     }
     setLoadingVentas(false)
   }, [cajaId])
 
   useEffect(() => {
-    if (cajaId) {
-      fetchVentas()
-    }
-  }, [cajaId, fetchVentas])
-
-  useEffect(() => {
     if (activeTab === 'ventas' || showCloseCajaModal) fetchVentas()
   }, [activeTab, showCloseCajaModal, fetchVentas])
+
+  // Si el catálogo trae precios o IVA nuevos, el carrito se recalcula: el total en
+  // pantalla siempre es el que la base va a cobrar.
+  useEffect(() => {
+    setCart(prev => {
+      let cambios = false
+      const next = prev.map(item => {
+        const def = inventario.find(p => p.producto_id === item.producto_id)
+        if (!def) return item
+        const base = Math.round(calculateLinePrice(def, item.cantidad_cajas, item.cantidad_blisters, item.cantidad_unidades))
+        const iva = normalizeIvaRate(def.iva_porcentaje)
+        if (base === item.precio_unitario_base && iva === item.iva_porcentaje) return item
+        cambios = true
+        return {
+          ...item,
+          precio_unitario_base: base,
+          precio_linea: aplicarDescuento(base, item.descuento_porcentaje),
+          precio_linea_original: base,
+          iva_porcentaje: iva,
+        }
+      })
+      if (!cambios) return prev
+      // Mismo id: si React repite el cálculo, el aviso no se duplica.
+      queueMicrotask(() =>
+        toast.info('Se actualizaron precios del carrito con el catálogo vigente', { id: 'carrito-precios' })
+      )
+      return next
+    })
+  }, [inventario])
+
+  useEffect(() => {
+    const query = clienteSearch.trim()
+    if (query.length < 2) {
+      setClienteResults([])
+      return
+    }
+
+    const controller = new AbortController()
+    let isCurrent = true
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/clientes?q=${encodeURIComponent(query)}`, {
+          cache: 'no-store',
+          signal: controller.signal,
+        })
+        if (!response.ok) throw new Error('No se pudo buscar el cliente')
+        const json = await response.json()
+        if (isCurrent) setClienteResults(json.data || [])
+      } catch (error) {
+        if (isCurrent && !(error instanceof DOMException && error.name === 'AbortError')) {
+          setClienteResults([])
+        }
+      }
+    }, 300)
+
+    return () => {
+      isCurrent = false
+      window.clearTimeout(timeoutId)
+      controller.abort()
+    }
+  }, [clienteSearch])
 
   // Auto-aplicar descuento y crédito cuando se selecciona cliente tipo distribuidor
   useEffect(() => {
@@ -516,7 +579,7 @@ export function FacturacionClient({
       return {
         ...item,
         descuento_porcentaje: descuentoPct,
-        precio_linea: item.precio_unitario_base * (1 - (descuentoPct / 100))
+        precio_linea: aplicarDescuento(item.precio_unitario_base, descuentoPct)
       }
     }))
   }, [descuentoPct])
@@ -543,7 +606,7 @@ export function FacturacionClient({
     let rejected = false
     setCart(prev => prev.map(item => {
       if (item.producto_id === producto_id) {
-        const productDef = inventarioInitial.find(p => p.producto_id === producto_id)
+        const productDef = inventario.find(p => p.producto_id === producto_id)
         if (!productDef) return item
 
         const updatedItem = { ...item, [field]: value }
@@ -565,10 +628,10 @@ export function FacturacionClient({
           return item
         }
 
-        const basePrice = calculateLinePrice(productDef, updatedItem.cantidad_cajas, updatedItem.cantidad_blisters, updatedItem.cantidad_unidades)
+        const basePrice = Math.round(calculateLinePrice(productDef, updatedItem.cantidad_cajas, updatedItem.cantidad_blisters, updatedItem.cantidad_unidades))
         updatedItem.precio_unitario_base = basePrice
         updatedItem.descuento_porcentaje = descuentoPct
-        updatedItem.precio_linea = basePrice * (1 - (descuentoPct / 100))
+        updatedItem.precio_linea = aplicarDescuento(basePrice, descuentoPct)
 
         return updatedItem
       }
@@ -587,7 +650,7 @@ export function FacturacionClient({
     let rejected = false
     setCart(prev => prev.map(item => {
       if (item.producto_id !== producto_id) return item
-      const productDef = inventarioInitial.find(p => p.producto_id === producto_id)
+      const productDef = inventario.find(p => p.producto_id === producto_id)
       if (!productDef) return item
 
       const bpc = Math.max(1, Number(productDef.blisters_por_caja) || 1)
@@ -603,7 +666,7 @@ export function FacturacionClient({
         return item
       }
 
-      const basePrice = calculateLinePrice(productDef, nextCounts.cajas, nextCounts.blisters, nextCounts.unidades)
+      const basePrice = Math.round(calculateLinePrice(productDef, nextCounts.cajas, nextCounts.blisters, nextCounts.unidades))
       return {
         ...item,
         cantidad_cajas: nextCounts.cajas,
@@ -611,7 +674,7 @@ export function FacturacionClient({
         cantidad_unidades: nextCounts.unidades,
         precio_unitario_base: basePrice,
         descuento_porcentaje: descuentoPct,
-        precio_linea: basePrice * (1 - (descuentoPct / 100)),
+        precio_linea: aplicarDescuento(basePrice, descuentoPct),
       }
     }))
 
@@ -646,7 +709,7 @@ export function FacturacionClient({
         toast.error(`Revisa ${item.nombre}: las cantidades no pueden quedar en 0.`)
         return
       }
-      const productDef = inventarioInitial.find(p => p.producto_id === item.producto_id)
+      const productDef = inventario.find(p => p.producto_id === item.producto_id)
       if (productDef) {
         if (isProductBlockedExpired(productDef)) {
           toast.error(`${item.nombre} tiene lote vencido bloqueado y no se puede vender.`)
@@ -677,58 +740,63 @@ export function FacturacionClient({
     }
 
     setIsProcessing(true)
-    const payload: FacturaData = {
-      cliente_nombre: clienteSelected?.nombre || 'Consumidor Final',
-      cliente_documento: clienteSelected?.documento || '222222222222',
-      metodo_pago: pagoMixtoValidation.metodoPago,
-      pago_efectivo: pagoMixtoValidation.pagoEfectivo,
-      pago_tarjeta: pagoMixtoValidation.pagoTarjeta,
-      pago_transferencia: pagoMixtoValidation.pagoTransferencia,
-      tipo_venta: tipoVenta,
-      condicion_pago_dias: tipoVenta === 'credito' ? condicionPagoDias : 0,
-      orden_compra: ordenCompra || undefined,
-      subtotal_bruto: cartSubtotalBruto,
-      descuento_porcentaje: descuentoPct,
-      descuento_monto: cartDescuentoMonto,
-      iva_porcentaje: ivaPct,
-      iva_total: cartIvaMonto,
-      total: cartTotal,
-      vendedor_id: vendedorId,
-      caja_sesion_id: cajaAbierta.id,
-      items: cart.map(i => ({ ...i, precio_linea_original: i.precio_linea }))
-    }
+    try {
+      // Directo a la base (sin Vercel). La RPC recalcula precios, IVA y pagos y
+      // rechaza la venta si el total difiere del que ve el cajero.
+      const res = await crearVenta({
+        cliente_nombre: clienteSelected?.nombre || 'Consumidor Final',
+        cliente_documento: clienteSelected?.documento || '222222222222',
+        metodo_pago: pagoMixtoValidation.metodoPago,
+        pago_efectivo: pagoMixtoValidation.pagoEfectivo,
+        pago_tarjeta: pagoMixtoValidation.pagoTarjeta,
+        pago_transferencia: pagoMixtoValidation.pagoTransferencia,
+        tipo_venta: tipoVenta,
+        condicion_pago_dias: tipoVenta === 'credito' ? condicionPagoDias : 0,
+        orden_compra: ordenCompra || undefined,
+        descuento_porcentaje: descuentoPct,
+        total: cartTotal,
+        vendedor_id: vendedorId,
+        caja_sesion_id: cajaAbierta.id,
+        items: cart.map((item) => ({
+          producto_id: item.producto_id,
+          cantidad_cajas: item.cantidad_cajas,
+          cantidad_blisters: item.cantidad_blisters,
+          cantidad_unidades: item.cantidad_unidades,
+        })),
+      })
+      // Stock (y precios si cambiaron) al día: solo viajan los productos tocados.
+      void catalogo.sincronizar()
+      if (res.success) {
+        const numeroShown = res.factura?.numero ? formatFacturaNum(res.factura.numero) : ''
+        toast.success(`Factura ${numeroShown} — ${tipoVenta === 'credito' ? `Crédito ${condicionPagoDias}d` : 'Contado'}`)
+        if (res.factura?.numero) {
+          setNextFacturaNum(Number(res.factura.numero) + 1)
+        }
+        setCart([])
+        setClienteSelected(null)
+        setClienteSearch('')
+        setOrdenCompra('')
+        setDescuentoPct(0)
+        setTipoVenta('contado')
+        setCondicionPagoDias(0)
+        setMetodoPago('efectivo')
+        setPagoEfectivoStr('')
+        setPagoTarjetaStr('')
+        setPagoTransferenciaStr('')
+        setEfectivoRecibido('')
 
-    const res = await crearFactura(payload)
-    if (res.success) {
-      const numeroShown = res.factura?.numero ? formatFacturaNum(res.factura.numero) : ''
-      toast.success(`Factura ${numeroShown} — ${tipoVenta === 'credito' ? `Crédito ${condicionPagoDias}d` : 'Contado'}`)
-      if (res.factura?.numero) {
-        setNextFacturaNum(res.factura.numero + 1)
+        if (res.factura?.id) {
+          setCreatedFacturaId(res.factura.id)
+          setShowPrintModal(true)
+        }
+      } else {
+        toast.error(res.error || 'Error al procesar la venta')
       }
-      setCart([])
-      setClienteSelected(null)
-      setClienteSearch('')
-      setOrdenCompra('')
-      setDescuentoPct(0)
-      setIvaPct(0)
-      setTipoVenta('contado')
-      setCondicionPagoDias(0)
-      setMetodoPago('efectivo')
-      setPagoEfectivoStr('')
-      setPagoTarjetaStr('')
-      setPagoTransferenciaStr('')
-      setEfectivoRecibido('')
-      router.refresh()
-      fetchVentas()
-
-      if (res.factura?.id) {
-        setCreatedFacturaId(res.factura.id)
-        setShowPrintModal(true)
-      }
-    } else {
-      toast.error(res.error || 'Error al procesar la venta')
+    } catch {
+      toast.error('No se pudo confirmar la venta por un problema de conexión. Verifica el historial de ventas antes de intentarlo de nuevo.')
+    } finally {
+      setIsProcessing(false)
     }
-    setIsProcessing(false)
   }
 
   const handleAbrirCaja = async () => {
@@ -836,7 +904,8 @@ export function FacturacionClient({
             </button>
           </div>
         ) : (
-          <div className="ml-auto flex gap-2">
+          <div className="ml-auto flex items-center gap-2">
+            <EstadoCatalogo catalogo={catalogo} className="hidden sm:inline-flex" />
             <button onClick={() => setShowCloseCajaModal(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 text-sm font-black transition-all active:scale-95">
               <Lock className="w-4 h-4" />
               Cerrar Caja
@@ -863,6 +932,13 @@ export function FacturacionClient({
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
+              {!catalogo.listo && (
+                <p className="mt-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-bold text-amber-800">
+                  {catalogo.sincronizando
+                    ? 'Descargando el catálogo en este equipo (solo la primera vez)…'
+                    : catalogo.error || 'El catálogo no está cargado. Usa el botón de actualizar.'}
+                </p>
+              )}
               {searchResults.length > 0 && (
                 <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-100 rounded-2xl shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden z-30 max-h-96 overflow-y-auto">
                   {searchResults.map(item => {
@@ -877,7 +953,7 @@ export function FacturacionClient({
                       blisters: Number(item.blisters) || 0,
                       unidades: Number(item.unidades) || 0,
                     }
-                    const pvpCaja = calculatePV(item.precio_caja || 0, item.margen_caja ?? item.porcentaje_ganancia ?? 0)
+                    const pvpCaja = calculatePV(item.precio_caja || 0, item.margen_caja ?? 0)
                     const pvpBlister = calculatePV(item.precio_blister || 0, item.margen_blister ?? 0)
                     const pvpUnidad = calculatePV(item.precio_unidad || 0, item.margen_unidad ?? 0)
                     const canCaja = !disabledAdd && avail.cajas >= 1
@@ -905,7 +981,7 @@ export function FacturacionClient({
                           </div>
                           {item.principio_activo && <p className="text-[10px] text-indigo-500 font-bold mb-0.5 mt-0.5 bg-indigo-50 inline-block px-1.5 py-0.5 rounded">Molécula: {item.principio_activo}</p>}
                           <p className="text-xs font-bold text-slate-400">
-                            {item.laboratorio || item.laboratorio_nombre} • {item.codigo || item.codigo_producto} • Stock: {item.cajas}C / {item.blisters}B / {item.unidades}U
+                            {item.laboratorio} • {item.codigo} • Stock: {item.cajas}C / {item.blisters}B / {item.unidades}U
                           </p>
                         </div>
 
@@ -989,7 +1065,7 @@ export function FacturacionClient({
                     </div>
                   )}
                   {cart.map(item => {
-                    const stockInfo = inventarioInitial.find(p => p.producto_id === item.producto_id);
+                    const stockInfo = inventario.find(p => p.producto_id === item.producto_id);
                     const bpc = Math.max(1, Number(stockInfo?.blisters_por_caja) || 1)
                     const upb = Math.max(1, Number(stockInfo?.unidades_por_blister) || 1)
                     const avail = {
@@ -1002,7 +1078,7 @@ export function FacturacionClient({
                       Boolean(stockInfo) &&
                       (item.cantidad_blisters > avail.blisters || item.cantidad_unidades > avail.unidades)
 
-                    const pvpCaja = stockInfo ? calculatePV(stockInfo.precio_caja || 0, stockInfo.margen_caja ?? stockInfo.porcentaje_ganancia ?? 0) : 0
+                    const pvpCaja = stockInfo ? calculatePV(stockInfo.precio_caja || 0, stockInfo.margen_caja ?? 0) : 0
                     const pvpBlister = stockInfo ? calculatePV(stockInfo.precio_blister || 0, stockInfo.margen_blister ?? 0) : 0
                     const pvpUnidad = stockInfo ? calculatePV(stockInfo.precio_unidad || 0, stockInfo.margen_unidad ?? 0) : 0
 
@@ -1030,7 +1106,7 @@ export function FacturacionClient({
                           <div className="flex-1 min-w-0 flex flex-col gap-1">
                             <p className="font-black text-slate-900 text-sm truncate">{item.nombre}</p>
                             <div className="flex items-center gap-2 flex-wrap">
-                              <p className="text-indigo-600 font-black text-base">${item.precio_linea.toLocaleString()}</p>
+                              <p className="text-indigo-600 font-black text-base">{formatCurrency(item.precio_linea)}</p>
                               {item.descuento_porcentaje > 0 && (
                                 <span className="bg-rose-100 text-rose-600 text-[8px] font-black px-1 rounded">-{item.descuento_porcentaje}%</span>
                               )}
@@ -1186,7 +1262,7 @@ export function FacturacionClient({
               <div className="text-center">
                 <p className="text-slate-500 text-xs font-black uppercase tracking-widest mb-1">Total a Cobrar</p>
                 <h3 className="text-5xl font-black tracking-tighter text-indigo-600 transition-all duration-300">
-                  ${cartTotal.toLocaleString()}
+                  {formatCurrency(cartTotal)}
                 </h3>
               </div>
 
@@ -1308,7 +1384,7 @@ export function FacturacionClient({
                     }`}
                   >
                     {pagoMixtoValidation.ok
-                      ? `Cuadrado exacto ($${cartTotal.toLocaleString()})`
+                      ? `Cuadrado exacto (${formatCurrency(cartTotal)})`
                       : pagoMixtoValidation.error}
                   </div>
                 </div>
@@ -1353,13 +1429,8 @@ export function FacturacionClient({
                     </div>
                     <div className="bg-white rounded-xl p-2 border border-slate-100">
                       <p className="text-slate-400 text-[8px] font-black uppercase tracking-tight mb-1">Descuento (%)</p>
-                      <input type="number" min="0" max="100" value={descuentoPct} onChange={e => setDescuentoPct(Math.max(0, Number(e.target.value) || 0))}
+                      <input type="number" min="0" max="100" value={descuentoPct} onChange={e => setDescuentoPct(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
                         className="bg-transparent text-indigo-600 font-black text-sm outline-none w-full" />
-                    </div>
-                    <div className="bg-white rounded-xl p-2 border border-slate-100">
-                      <p className="text-slate-400 text-[8px] font-black uppercase tracking-tight mb-1">IVA (%)</p>
-                      <input type="number" min="0" max="100" value={ivaPct} onChange={e => setIvaPct(Math.max(0, Number(e.target.value) || 0))}
-                        className="bg-transparent text-slate-700 font-black text-xs outline-none w-full" />
                     </div>
                     <div className="col-span-2 bg-slate-100 rounded-xl p-2 border border-slate-200 flex justify-between items-center">
                       <p className="text-slate-400 text-[8px] font-black uppercase tracking-tight">Factura (Automática Sede)</p>
@@ -1398,12 +1469,9 @@ export function FacturacionClient({
                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input type="text" value={clienteSearch} placeholder="Buscar por Nombre o NIT..."
                     className="w-full pl-11 pr-4 py-3.5 bg-slate-50 rounded-2xl text-sm font-bold outline-none border border-transparent focus:bg-white focus:border-indigo-100 transition-all"
-                    onChange={async e => {
-                      const val = e.target.value; setClienteSearch(val); setShowClienteDropdown(true)
-                      if (val.length >= 1) {
-                        const res = await fetch(`/api/clientes?q=${encodeURIComponent(val)}`, { cache: 'no-store' })
-                        const json = await res.json(); setClienteResults(json.data || [])
-                      }
+                    onChange={e => {
+                      setClienteSearch(e.target.value)
+                      setShowClienteDropdown(true)
                     }}
                     onFocus={() => setShowClienteDropdown(true)}
                   />
@@ -1481,19 +1549,19 @@ export function FacturacionClient({
               <div className="space-y-2">
                 <div className="flex justify-between text-sm font-bold text-slate-400">
                   <span>Total sin descuento</span>
-                  <span>${cartSubtotalBruto.toLocaleString()}</span>
+                  <span>{formatCurrency(cartSubtotalBruto)}</span>
                 </div>
                 {cartDescuentoMonto > 0 ? (
                   <div className="flex flex-col gap-2 font-black text-rose-500 bg-rose-50 px-4 py-3 rounded-2xl border border-rose-100/50">
                     <div className="flex justify-between text-sm">
                       <span>Descuento Aplicado</span>
-                      <span>-${cartDescuentoMonto.toLocaleString()}</span>
+                      <span>-{formatCurrency(cartDescuentoMonto)}</span>
                     </div>
                     <div className="flex flex-col gap-1 pt-2 border-t border-rose-200/50">
                       {cart.filter(item => item.descuento_porcentaje > 0).map(item => (
                         <div key={item.producto_id} className="flex justify-between items-center text-[10px] font-bold text-rose-400 opacity-90">
                           <span className="truncate max-w-[200px]">{item.nombre} ({item.descuento_porcentaje}%)</span>
-                          <span>-${(item.precio_unitario_base - item.precio_linea).toLocaleString()}</span>
+                          <span>-{formatCurrency(item.precio_unitario_base - item.precio_linea)}</span>
                         </div>
                       ))}
                     </div>
@@ -1505,8 +1573,8 @@ export function FacturacionClient({
                   </div>
                 )}
                 <div className="flex justify-between text-sm font-bold text-slate-400">
-                  <span>Impuestos (IVA {ivaPct}%)</span>
-                  <span>+${cartIvaMonto.toLocaleString()}</span>
+                  <span>{hasMixedIva ? 'Impuestos (IVA por producto)' : `Impuestos (IVA ${cartIvaPct}%)`}</span>
+                  <span>+{formatCurrency(cartIvaMonto)}</span>
                 </div>
               </div>
 
@@ -1515,7 +1583,7 @@ export function FacturacionClient({
               <div className="flex flex-col gap-3">
                 <div className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
                   <span className="text-sm font-black text-slate-500 uppercase tracking-widest">Total Neto a Pagar</span>
-                  <span className="text-4xl font-black text-indigo-600 tracking-tighter leading-none">${cartTotal.toLocaleString()}</span>
+                  <span className="text-4xl font-black text-indigo-600 tracking-tighter leading-none">{formatCurrency(cartTotal)}</span>
                 </div>
                 <button
                   onClick={handleProcessSale}
@@ -1705,7 +1773,7 @@ export function FacturacionClient({
                                       if (!cajaAbierta) { toast.error('Abre caja para registrar el pago'); return }
                                       const confirm = window.confirm(`¿Registrar pago de $${Number(f.total).toLocaleString()} para la factura ${formatFacturaNum(f.numero)}?`)
                                       if (!confirm) return
-                                      const res = await marcarComoPagada(f.id, cajaAbierta.id, 'efectivo')
+                                      const res = await cobrarSaldoTotal(f.id, cajaAbierta.id, 'efectivo')
                                       if (res.success) { toast.success('Pago registrado'); fetchVentas() } else { toast.error(res.error) }
                                     }}
                                     className="px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-white text-[9px] font-black rounded-lg shadow-sm transition-all uppercase">
@@ -1877,12 +1945,11 @@ export function FacturacionClient({
                                     const monto = Number(f.saldo_pendiente ?? (esVencido ? totalSinDescuento : totalConDescuento))
                                     if (!window.confirm(`¿Registrar pago total del saldo (${formatCurrency(monto)}) para la factura ${formatFacturaNum(f.numero)}?`)) return
                                     const res = Number(f.monto_abonado || 0) > 0
-                                      ? await registrarAbonoFactura(f.id, cajaAbierta.id, monto, 'efectivo', 'Pago saldo final')
-                                      : await marcarComoPagada(f.id, cajaAbierta.id, 'efectivo')
+                                      ? await registrarAbono(f.id, cajaAbierta.id, monto, 'efectivo', 'Pago saldo final')
+                                      : await cobrarSaldoTotal(f.id, cajaAbierta.id, 'efectivo')
                                     if (res.success) {
                                       toast.success('Cobro registrado correctamente')
                                       await fetchVentas()
-                                      router.refresh()
                                     } else {
                                       toast.error(res.error || 'Error al registrar cobro')
                                     }
@@ -2072,16 +2139,16 @@ export function FacturacionClient({
               </button>
               <button
                 type="button"
-                disabled={isCancelingFactura || !cancelReason.trim()}
+                disabled={isCancelingFactura || cancelReason.trim().length < 3}
                 onClick={async () => {
                   setIsCancelingFactura(true)
-                  const res = await anularFactura(cancelingFactura.id, cancelReason)
+                  const res = await anularVenta(cancelingFactura.id, cancelReason)
                   if (res.success) {
                     toast.success(`Factura #${cancelingFactura.numero} anulada y stock devuelto`)
                     setCancelingFactura(null)
                     setCancelReason('')
+                    void catalogo.sincronizar()
                     await fetchVentas()
-                    router.refresh()
                   } else {
                     toast.error(res.error || 'No se pudo anular la factura')
                   }
@@ -2141,7 +2208,7 @@ export function FacturacionClient({
                           {eq.nombre_producto}
                         </p>
                         <p className="text-[11px] font-bold text-slate-500">
-                          {eq.laboratorio || eq.laboratorio_nombre || 'Genérico'} • Stock: {eq.cajas}C / {eq.blisters}B / {eq.unidades}U
+                          {eq.laboratorio || 'Genérico'} • Stock: {eq.cajas}C / {eq.blisters}B / {eq.unidades}U
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-1.5 shrink-0">
@@ -2293,7 +2360,7 @@ export function FacturacionClient({
                 onClick={async () => {
                   if (!cajaAbierta) return
                   setIsSavingAbono(true)
-                  const res = await registrarAbonoFactura(
+                  const res = await registrarAbono(
                     payingAbonoFactura.id,
                     cajaAbierta.id,
                     Number(abonoMonto),
@@ -2304,7 +2371,6 @@ export function FacturacionClient({
                     toast.success('Abono registrado correctamente')
                     setPayingAbonoFactura(null)
                     await fetchVentas()
-                    router.refresh()
                   } else {
                     toast.error(res.error || 'Error al registrar abono')
                   }

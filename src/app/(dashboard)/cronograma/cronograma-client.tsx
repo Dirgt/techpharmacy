@@ -45,6 +45,10 @@ const SHIFT_TIMES: Record<string, string> = {
   'Turno Largo': '08:00 - 20:00'
 }
 
+// Fecha local YYYY-MM-DD (toISOString convierte a UTC y puede cambiar el día o el mes).
+const toLocalDateOnly = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+
 const getDaysInMonth = (date: Date) => {
   const year = date.getFullYear()
   const month = date.getMonth()
@@ -166,7 +170,9 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
   const handleCloneMonth = async () => {
     if (!confirm('Esto copiará todos los turnos del mes pasado al mes actual. ¿Continuar?')) return
     setLoading(true)
-    const result = await clonePreviousMonth(currentMonth.toISOString().split('T')[0])
+    const result = await clonePreviousMonth(
+      toLocalDateOnly(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1))
+    )
     if (result.error) {
       toast.error(result.error)
     } else {
@@ -177,7 +183,7 @@ export function CronogramaClient({ initialTurnos, usuarios }: CronogramaClientPr
   }
 
   const handleDayClick = (day: Date) => {
-    const formattedDate = day.toISOString().split('T')[0]
+    const formattedDate = toLocalDateOnly(day)
     setSelectedDate(formattedDate)
     setIsCreateDialogOpen(true)
   }

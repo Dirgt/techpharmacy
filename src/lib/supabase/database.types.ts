@@ -424,6 +424,7 @@ export type Database = {
       droguerias: {
         Row: {
           created_at: string | null
+          descuento_max_vendedor: number
           direccion: string | null
           estado: string
           fecha_vencimiento: string | null
@@ -444,6 +445,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          descuento_max_vendedor?: number
           direccion?: string | null
           estado?: string
           fecha_vencimiento?: string | null
@@ -464,6 +466,7 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          descuento_max_vendedor?: number
           direccion?: string | null
           estado?: string
           fecha_vencimiento?: string | null
@@ -557,6 +560,9 @@ export type Database = {
           drogueria_id: string
           factura_id: string | null
           id: string
+          iva_monto: number
+          iva_porcentaje: number
+          lotes_consumidos: Json | null
           precio_unitario: number
           producto_id: string | null
         }
@@ -567,6 +573,9 @@ export type Database = {
           drogueria_id?: string
           factura_id?: string | null
           id?: string
+          iva_monto?: number
+          iva_porcentaje?: number
+          lotes_consumidos?: Json | null
           precio_unitario: number
           producto_id?: string | null
         }
@@ -577,6 +586,9 @@ export type Database = {
           drogueria_id?: string
           factura_id?: string | null
           id?: string
+          iva_monto?: number
+          iva_porcentaje?: number
+          lotes_consumidos?: Json | null
           precio_unitario?: number
           producto_id?: string | null
         }
@@ -1043,6 +1055,7 @@ export type Database = {
           descripcion: string | null
           drogueria_id: string
           id: string
+          iva_porcentaje: number
           laboratorio_id: string | null
           nombre: string
           principio_activo: string | null
@@ -1055,6 +1068,7 @@ export type Database = {
           descripcion?: string | null
           drogueria_id?: string
           id?: string
+          iva_porcentaje?: number
           laboratorio_id?: string | null
           nombre: string
           principio_activo?: string | null
@@ -1067,6 +1081,7 @@ export type Database = {
           descripcion?: string | null
           drogueria_id?: string
           id?: string
+          iva_porcentaje?: number
           laboratorio_id?: string | null
           nombre?: string
           principio_activo?: string | null
@@ -1196,8 +1211,10 @@ export type Database = {
           id: string | null
           iva_total: number | null
           metodo_pago: string | null
+          monto_abonado: number | null
           numero: number | null
           orden_compra: string | null
+          saldo_pendiente: number | null
           subtotal_bruto: number | null
           tipo_venta: string | null
           total_con_descuento: number | null
@@ -1255,8 +1272,24 @@ export type Database = {
         Args: { p_factura_id: string; p_motivo?: string }
         Returns: Json
       }
+      anular_factura_v2_tx: {
+        Args: { p_factura_id: string; p_motivo?: string }
+        Returns: Json
+      }
       cerrar_caja_tx: {
         Args: { p_caja_id: string; p_monto_cierre: number }
+        Returns: Json
+      }
+      check_login_rate_limit: {
+        Args: { p_key_hash: string }
+        Returns: Json
+      }
+      clear_login_rate_limit: {
+        Args: { p_key_hash: string }
+        Returns: undefined
+      }
+      consume_api_rate_limit: {
+        Args: { p_api_key_id: string; p_limit?: number }
         Returns: Json
       }
       crear_factura_tx: {
@@ -1278,11 +1311,83 @@ export type Database = {
         }
         Returns: Json
       }
+      crear_factura_v2_tx: {
+        Args: {
+          p_caja_sesion_id: string
+          p_cliente_documento: string
+          p_cliente_nombre: string
+          p_condicion_pago_dias: number
+          p_descuento_porcentaje: number
+          p_items: Database["public"]["CompositeTypes"]["factura_item_input"][]
+          p_metodo_pago: string
+          p_orden_compra: string
+          p_pago_efectivo?: number
+          p_pago_tarjeta?: number
+          p_pago_transferencia?: number
+          p_tipo_venta: string
+          p_total_cliente?: number
+          p_vendedor_id: string
+        }
+        Returns: Json
+      }
+      bitacora_inventario: {
+        Args: { p_inventario_id: string; p_limite?: number }
+        Returns: {
+          accion: string
+          created_at: string | null
+          detalles: string | null
+          id: string
+          operador: string | null
+        }[]
+      }
+      catalogo_sync: {
+        Args: { p_desde?: string }
+        Returns: Json
+      }
+      dashboard_resumen: {
+        Args: never
+        Returns: Json
+      }
+      pedido_sugerido: {
+        Args: never
+        Returns: {
+          codigo: string
+          laboratorio: string
+          nombre: string
+          principio_activo: string | null
+          producto_id: string
+          stock_actual_cajas: number
+          stock_minimo: number
+          sugerido_cajas: number
+          ventas_30d_cajas: number
+        }[]
+      }
+      serie_ingresos_gastos: {
+        Args: { p_dias?: number }
+        Returns: {
+          fecha: string
+          gastos: number
+          ingresos: number
+        }[]
+      }
       dar_baja_lote_tx: {
         Args: { p_lote_id: string; p_motivo?: string }
         Returns: Json
       }
       get_current_drogueria_id: { Args: never; Returns: string }
+      platform_tenant_metrics: {
+        Args: never
+        Returns: {
+          cajas_abiertas: number
+          clientes_count: number
+          compras_count: number
+          drogueria_id: string
+          facturas_count: number
+          productos_count: number
+          ultima_factura_at: string | null
+          volumen_facturado: number
+        }[]
+      }
       get_public_tenant_by_host: {
         Args: { p_host?: string; p_subdominio?: string }
         Returns: {
@@ -1327,6 +1432,19 @@ export type Database = {
         }
         Returns: Json
       }
+      registrar_compra_v2_tx: {
+        Args: {
+          p_caja_sesion_id: string
+          p_detalles: Database["public"]["CompositeTypes"]["compra_detalle_input"][]
+          p_estado_pago: string
+          p_estado_recepcion?: string
+          p_metodo_pago: string
+          p_numero_factura: string
+          p_observaciones_recepcion?: string
+          p_proveedor_id: string
+        }
+        Returns: Json
+      }
       registrar_gasto_tx: {
         Args: {
           p_caja_sesion_id: string
@@ -1337,9 +1455,53 @@ export type Database = {
         }
         Returns: Json
       }
+      record_login_failure: {
+        Args: { p_key_hash: string }
+        Returns: Json
+      }
       sync_inventario_from_lotes: {
         Args: { p_inventario_id: string }
         Returns: undefined
+      }
+      ventas_por_producto: {
+        Args: { p_desde: string; p_limite?: number; p_orden?: string }
+        Returns: {
+          cajas_equivalentes: number
+          ingresos: number
+          nombre: string
+          producto_id: string
+          unidades_equivalentes: number
+        }[]
+      }
+      upsert_inventario_v2_tx: {
+        Args: {
+          p_blisters?: number
+          p_blisters_por_caja?: number
+          p_cajas?: number
+          p_codigo?: string
+          p_fecha_vencimiento?: string
+          p_inventario_id?: string
+          p_laboratorio_id?: string
+          p_lote?: string
+          p_margen_blister?: number
+          p_margen_unidad?: number
+          p_nombre?: string
+          p_porcentaje_ganancia?: number
+          p_precio_blister?: number
+          p_precio_caja?: number
+          p_precio_unidad?: number
+          p_principio_activo?: string
+          p_producto_id?: string
+          p_registro_invima?: string
+          p_seccion?: string
+          p_stock_minimo?: number
+          p_ubicacion?: string
+          p_unidades?: number
+          p_unidades_por_blister?: number
+          p_iva_porcentaje?: number
+          p_requiere_formula?: boolean
+        }
+        Returns: Json
       }
       upsert_inventario_tx: {
         Args: {

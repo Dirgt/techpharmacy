@@ -35,8 +35,8 @@ export default function ConfigClient({ profile, userEmail }: { profile: any; use
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (password.length < 6) {
-      return toast.error('La contraseña debe tener al menos 6 caracteres')
+    if (password.length < 8) {
+      return toast.error('La contraseña debe tener al menos 8 caracteres')
     }
     if (password !== confirmPassword) {
       return toast.error('Las contraseñas no coinciden')
@@ -137,7 +137,7 @@ export default function ConfigClient({ profile, userEmail }: { profile: any; use
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Mínimo 6 caracteres"
+                  placeholder="Mínimo 8 caracteres"
                   className="h-12 rounded-xl bg-slate-50 border-slate-200 font-medium px-4"
                   required
                 />
@@ -225,7 +225,7 @@ export default function ConfigClient({ profile, userEmail }: { profile: any; use
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs font-black text-slate-500 uppercase tracking-widest">
-                    Prefijo de Factura / Recibo (Opcional)
+                    Prefijo de Comprobante Interno (Opcional)
                   </Label>
                   <Input
                     value={fiscalForm.prefijo_factura}
@@ -235,23 +235,27 @@ export default function ConfigClient({ profile, userEmail }: { profile: any; use
                         prefijo_factura: e.target.value.toUpperCase(),
                       })
                     }
-                    placeholder="Ej. POS, FAC o dejar vacío"
+                    placeholder="Ej. POS, REC o dejar vacío"
                     maxLength={12}
                     className="h-11 rounded-xl bg-slate-50 border-slate-200 font-medium px-4 uppercase"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs font-black text-slate-500 uppercase tracking-widest">
-                    Resolución DIAN / Nota Fiscal (Opcional)
+                    Referencia de Resolución DIAN (No habilita facturación electrónica)
                   </Label>
                   <Input
                     value={fiscalForm.resolucion_dian}
                     onChange={(e) =>
                       setFiscalForm({ ...fiscalForm, resolucion_dian: e.target.value })
                     }
-                    placeholder="Opcional: déjalo vacío si solo usas recibo POS interno"
+                    placeholder="Solo referencia interna; requiere integración DIAN independiente"
                     className="h-11 rounded-xl bg-slate-50 border-slate-200 font-medium px-4"
                   />
+                  <p className="text-[11px] font-semibold text-amber-700 leading-relaxed">
+                    TechPharmacy emite comprobantes internos. Este campo no genera CUFE/CUDE, XML,
+                    firma ni validación ante la DIAN.
+                  </p>
                 </div>
               </div>
 

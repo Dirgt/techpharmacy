@@ -1,5 +1,6 @@
-import { getInventario, getLaboratorios } from '@/app/actions/inventario'
-import InventarioClient from './inventario-client'
+import { getLaboratorios } from '@/app/actions/inventario'
+import { getCurrentUserWithProfile } from '@/lib/auth/session'
+import { InventarioLoader } from './inventario-loader'
 
 export const metadata = {
   title: 'Inventario | TechPharmacy',
@@ -7,11 +8,9 @@ export const metadata = {
 }
 
 export default async function InventarioPage() {
-  // Fetch inicial de datos en el servidor
-  const [inventario, laboratorios] = await Promise.all([
-    getInventario(),
-    getLaboratorios()
-  ])
+  // El inventario llega del catálogo local del navegador (IndexedDB + cambios
+  // incrementales); el servidor solo envía los laboratorios.
+  const [laboratorios, session] = await Promise.all([getLaboratorios(), getCurrentUserWithProfile()])
 
   return (
     <div className="p-6 space-y-6">
@@ -20,9 +19,9 @@ export default async function InventarioPage() {
         <p className="text-slate-500 font-medium">Control total de stock, costos y vencimientos.</p>
       </div>
 
-      <InventarioClient 
-        initialData={inventario} 
-        laboratorios={laboratorios} 
+      <InventarioLoader
+        drogueriaId={session?.profile?.drogueria_id ?? null}
+        laboratorios={laboratorios}
       />
     </div>
   )
